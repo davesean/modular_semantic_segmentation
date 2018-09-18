@@ -28,15 +28,15 @@ class Cityscapes(DataBaseclass):
 
         config = {
             'augmentation': {
-                'crop': [1, 240],
-                'scale': [.4, 1, 1.5],
-                'vflip': .3,
+                'crop': False, #[1, 240],
+                'scale': False, #[.4, 1, 1.5],
+                'vflip': False, #.3,
                 'hflip': False,
-                'gamma': [.4, 0.3, 1.2],
+                'gamma': False, #[.4, 0.3, 1.2],
                 'rotate': False,
                 'shear': False,
-                'contrast': [.3, 0.5, 1.5],
-                'brightness': [.2, -40, 40]
+                'contrast': False, #[.3, 0.5, 1.5],
+                'brightness': False, #[.2, -40, 40]
             },
             'resize': False
         }

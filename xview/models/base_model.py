@@ -259,6 +259,7 @@ class BaseModel(object):
         if self.output_dir is not None:
             train_writer.close()
         print('INFO: Training finished.')
+        stdout.flush()
 
     @transform_inputdata()
     @with_graph
@@ -301,6 +302,7 @@ class BaseModel(object):
         Returns:
             dictionary of some measures, total confusion matrix
         """
+
         with self.graph.as_default():
             # run through batches of the data and collect all in this confusion matrix
             confusion_matrix = np.zeros((self.config['num_classes'],

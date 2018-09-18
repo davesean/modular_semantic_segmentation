@@ -193,6 +193,7 @@ class SimpleFCN(BaseModel):
             'train_encoder': True,
             'dropout_rate': 0
         }
+
         standard_config.update(config)
         BaseModel.__init__(self, data_description, output_dir=output_dir,
                            **standard_config)
