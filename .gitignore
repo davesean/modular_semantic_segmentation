@@ -5,3 +5,5 @@ lsf.*
 .cache
 .ipynb_checkpoints
 notebooks/
+.DS*
+*.yaml

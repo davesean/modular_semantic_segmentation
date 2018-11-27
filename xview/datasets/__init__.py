@@ -2,6 +2,8 @@ from .synthia import Synthia
 from .raw_synthia import Synthia as SynthiaRaw
 from .synthia_cityscapes import SynthiaCityscapes
 from .cityscapes import Cityscapes
+from .cityscapes_GAN import Cityscapes_GAN
+from .cityscapes_generated import Cityscapes_generated
 from .synthia_rand import SynthiaRand
 from .mixed_data import MixedData
 
@@ -15,6 +17,10 @@ def get_dataset(name):
         return SynthiaCityscapes
     elif name in ['cityscapes', 'cityscapes_c']:
         return Cityscapes
+    elif name in ['cityscapes_GAN']:
+        return Cityscapes_GAN
+    elif name in ['cityscapes_generated']:
+        return Cityscapes_generated
     elif name == 'synthiarand':
         return SynthiaRand
     if name == 'mixeddata':

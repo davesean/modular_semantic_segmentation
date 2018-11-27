@@ -3,24 +3,25 @@ from os import listdir, path, environ
 import cv2
 import tarfile
 from sklearn.model_selection import train_test_split
-
+from tensorflow import data as dt
 from xview.settings import DATA_BASEPATH
 from .data_baseclass import DataBaseclass
-from .augmentation import augmentate
+from .augmentation import augmentate, crop_multiple
 from copy import deepcopy
 
-
 CITYSCAPES_BASEPATH = path.join(DATA_BASEPATH, 'cityscapes')
+
+# CITIES = ['zurich']
 
 CITIES = ['aachen', 'bremen', 'darmstadt', 'erfurt', 'hanover', 'krefeld', 'strasbourg',
           'tubingen', 'weimar', 'bochum', 'cologne', 'dusseldorf', 'hamburg', 'jena',
           'monchengladbach', 'stuttgart', 'ulm', 'zurich']
 
 
-class Cityscapes(DataBaseclass):
+class Cityscapes_GAN(DataBaseclass):
 
     _data_shape_description = {
-            'rgb': (None, None, 3), 'depth': (None, None, 1), 'labels': (None, None)}
+            'rgb': (None, None, 3), 'labels': (None, None,3)}
     _num_default_classes = 12
 
     def __init__(self, base_path=CITYSCAPES_BASEPATH, batchsize=1, in_memory=False,
@@ -42,7 +43,7 @@ class Cityscapes(DataBaseclass):
         }
         config.update(data_config)
         self.config = config
-
+        print("Number of Cities: %d" % len(CITIES))
         if not path.exists(base_path):
             message = 'ERROR: Path to CITYSCAPES dataset does not exist.'
             print(message)
@@ -52,12 +53,10 @@ class Cityscapes(DataBaseclass):
         self.modality_paths = {
                 'rgb': 'leftImg8bit_trainvaltest/leftImg8bit',
                 'labels': 'gtFine_trainvaltest/gtFine',
-                'depth': 'disparity_trainvaltest/disparity'
         }
         self.modality_suffixes = {
                 'rgb': 'leftImg8bit',
-                'labels': 'gtFine_labelIds',
-                'depth': 'disparity'
+                'labels': 'gtFine_color',
         }
         self.in_memory = in_memory
 
@@ -158,34 +157,24 @@ class Cityscapes(DataBaseclass):
         DataBaseclass.__init__(self, trainset, measureset, testset, labelinfo)
 
     def _load_data(self, image_path):
-        rgb_filename, depth_filename, labels_filename = (
+        rgb_filename, labels_filename = (
             path.join(self.base_path,
                       self.modality_paths[m],
                       '{}_{}.png'.format(image_path,
                                          self.modality_suffixes[m]))
-            for m in ['rgb', 'depth', 'labels']
+            for m in ['rgb', 'labels']
         )
 
         blob = {}
         blob['rgb'] = cv2.imread(rgb_filename)
-        blob['depth'] = cv2.imread(depth_filename, cv2.IMREAD_ANYDEPTH)
-        blob['labels'] = cv2.imread(labels_filename, cv2.IMREAD_ANYDEPTH)
-        # apply label mapping
-        blob['labels'] = np.asarray(self.label_lookup, dtype='int32')[blob['labels']]
+        #blob['depth'] = cv2.imread(depth_filename, cv2.IMREAD_ANYDEPTH)
+        blob['labels'] = cv2.imread(labels_filename)
 
         if self.config['resize']:
-            # blob['rgb'] = cv2.resize(blob['rgb'], (768, 384),
-            #                          interpolation=cv2.INTER_LINEAR)
-            # for m in ['depth', 'labels']:
-            #     blob[m] = cv2.resize(blob[m], (768, 384),
-            #                          interpolation=cv2.INTER_NEAREST)
-            blob['rgb'] = cv2.resize(blob['rgb'], (256, 256),
+            blob['rgb'] = cv2.resize(blob['rgb'], (286, 286),
                                      interpolation=cv2.INTER_LINEAR)
-            for m in ['depth', 'labels']:
-                blob[m] = cv2.resize(blob[m], (256, 256),
+            blob['labels'] = cv2.resize(blob['labels'], (286, 286),
                                      interpolation=cv2.INTER_NEAREST)
-
-        blob['depth'] = np.expand_dims(blob['depth'], 3)
         return blob
 
     def _get_data(self, image_path, training_format=False):
@@ -202,6 +191,12 @@ class Cityscapes(DataBaseclass):
 
         if training_format:
             blob = augmentate(blob, **self.config['augmentation'])
+
+        blob['rgb'] = cv2.resize(blob['rgb'], (256, 256),
+                                 interpolation=cv2.INTER_LINEAR)
+        blob['labels'] = cv2.resize(blob['labels'], (256, 256),
+                                 interpolation=cv2.INTER_NEAREST)
+            # blob = augmentate(blob, crop=self.config['augmentation']['crop'])
 
         return blob
 

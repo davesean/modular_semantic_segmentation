@@ -411,7 +411,7 @@ class BaseModel(object):
         if warnings:
             print(filepath)
         weights = np.load(filepath, mmap_mode='w+')
-        import_prefix = weights.keys()[0].split('/')[0].split('_')[0]
+        import_prefix = weights.files[0].split('/')[0].split('_')[0]
 
         def translate_name(name):
             """May translate the prefix of the name according to settings."""

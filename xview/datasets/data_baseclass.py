@@ -6,7 +6,6 @@ import tensorflow as tf
 from .augmentation import crop_multiple
 from .wrapper import DataWrapper
 
-
 class DataBaseclass(DataWrapper):
     """A basic, abstract class for splitting data into batches, compliant with DataWrapper
     interface."""
@@ -28,10 +27,14 @@ class DataBaseclass(DataWrapper):
         self.modalities = list(self._data_shape_description.keys())
         self.labelinfo = labelinfo
         self.print_info = info
-        shuffle(self.trainset)
+        try:
+            shuffle(self.trainset)
+        except KeyError:
+            print("Can't shuffle train set, if this is expected, ignore this message")
+            pass
 
     @classmethod
-    def get_data_description(cls, num_classes=None):
+    def get_data_description(cls, num_classes=None, is_GAN=False):
         """Produces a descriptor of the data the given class produces.
 
         For implementation reasons, this has to be a class method and cannot have
@@ -50,9 +53,16 @@ class DataBaseclass(DataWrapper):
         modalities = list(data_shape_description.keys())
         if num_classes is None:
             num_classes = cls._num_default_classes
-        return ({'labels': tf.int32, **{m: tf.float32 for m in modalities
-                                        if not m == 'labels'}},
-                data_shape_description, num_classes)
+        try:
+            if (data_shape_description['labels'][2]) is 3:
+                return ({'labels': tf.float32, **{m: tf.float32 for m in modalities
+                                                if not m == 'labels'}},
+                        data_shape_description, num_classes)
+        except IndexError:
+            return ({'labels': tf.int32, **{m: tf.float32 for m in modalities
+                                            if not m == 'labels'}},
+                    data_shape_description, num_classes)
+
 
     def _get_data(self, **kwargs):
         """Returns data for one item in trainset or testset. kwargs is the unfolded dict
