@@ -87,6 +87,14 @@ class Cityscapes_generated(DataBaseclass):
         return tf.data.Dataset.from_generator(data_generator,
                                               *self.get_data_description()[:2])
 
+    def get_validation_set(self, num_items=None, tf_dataset=True):
+        """Return testset. By default as tf.data.dataset, otherwise as numpy array."""
+        if num_items is None:
+            num_items = len(self.validation_set)
+        if not tf_dataset:
+            return self._get_batch(self.validation_set[:num_items])
+        return self._get_tf_dataset(self.validation_set)
+
     def get_ego_vehicle_mask(self, image_name, image_path):
         # save the old label mapping
         old_label_lookup = deepcopy(self.label_lookup)
