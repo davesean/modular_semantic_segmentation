@@ -86,7 +86,9 @@ def predict_network(net, output_dir, paths, data_desc):
     #     experiment.add_artifact(os.path.join(output_dir, filename))
 
 def load_list_path(input_path):
-    return glob.glob(os.path.join(input_path,"*.png"))
+    tmp = glob.glob(os.path.join(input_path,"*.png"))
+    tmp.sort()
+    return tmp
 
 ex = sc.Experiment()
 # reduce output of progress bars
