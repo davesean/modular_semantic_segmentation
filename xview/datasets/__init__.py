@@ -6,11 +6,14 @@ from .cityscapes_GAN import Cityscapes_GAN
 from .cityscapes_generated import Cityscapes_generated
 from .synthia_rand import SynthiaRand
 from .mixed_data import MixedData
+from .not_cityscapes import AddRandomObjects
 
 
 def get_dataset(name):
     if name == 'synthia':
         return Synthia
+    elif name == 'not_cityscapes':
+        return AddRandomObjects
     elif name == 'raw_synthia':
         return SynthiaRaw
     elif name == 'synthia_cityscapes':

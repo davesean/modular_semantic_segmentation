@@ -4,6 +4,11 @@ import numpy as np
 import random
 from imgaug import augmenters as ia
 
+def add_gaussian_noise(image,mean=0,std=0.02):
+    h, w, c =image.shape
+    noise = np.zeros((h, w, c), np.int8)
+    cv2.randn(noise, np.ones(3)*mean, np.ones(3)*255*std)
+    return np.clip(cv2.add(image, noise, dtype=cv2.CV_8UC3),0, 255)
 
 def rotate_image(image, angle):
     """

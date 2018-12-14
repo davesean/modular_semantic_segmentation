@@ -4,14 +4,15 @@ import cv2
 import tarfile
 import glob
 import os
+import random
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from tensorflow import data as dt
 from xview.settings import DATA_BASEPATH
 from .data_baseclass import DataBaseclass
-from .augmentation import augmentate, crop_multiple
+from .augmentation import augmentate, crop_multiple, add_gaussian_noise
 from copy import deepcopy
-
+# from sys import stdout
 
 CITYSCAPES_BASEPATH = path.join(DATA_BASEPATH, 'cityscapes')
 
@@ -21,37 +22,65 @@ class Cityscapes_generated(DataBaseclass):
             'labels': (None, None, 3), 'pos': (None, None,3), 'neg': (None, None,3), 'pos_segm': (None, None,3), 'neg_segm': (None, None,3)}
     _num_default_classes = 2
 
-    def __init__(self, base_path=CITYSCAPES_BASEPATH, batchsize=1):
+    def __init__(self, base_path=CITYSCAPES_BASEPATH, batchsize=1, ppd=8, **data_config):
 
         if not path.exists(base_path):
             message = 'ERROR: Path to CITYSCAPES dataset does not exist.'
             print(message)
             raise IOError(1, message, base_path)
 
+        config = {
+            'augmentation': {
+                'crop': [1, 32],
+                'scale': False,
+                'vflip': 1,
+                'hflip': 1,
+                'gamma': False,
+                'rotate': False,
+                'shear': False,
+                'contrast': False,
+                'brightness': False,
+                'noise': [0, 0.01]
+            },
+            'resize': False
+        }
+        config.update(data_config)
+        self.config = config
+
         self.base_path = base_path
+        # Patches per dimension
+        self.ppd = ppd
         self.id = self.base_path.split("/")[-1].split("_")[0]
         measure_path, self.num_measure = self._create_Dictionary(base_path,'measure')
         training_path, self.num_training = self._create_Dictionary(base_path,'training')
         validation_path, self.num_validation = self._create_Dictionary(base_path,'validation',is_validation=True)
+
+        self.num_validation *= self.ppd*self.ppd
+        self.num_measure *= self.ppd*self.ppd
+        self.num_training *= self.ppd*self.ppd
 
         # Intitialize Baseclass
         DataBaseclass.__init__(self, training_path, measure_path, testset=None,
                               validation_set=validation_path, labelinfo=None)
 
     def _create_Dictionary(self,path,prefix, is_validation=False):
-        if is_validation:
-            target_list = glob.glob(os.path.join(path,prefix,"target_*.png"))
-            target_list.sort()
-            fake_list = glob.glob(os.path.join(path,prefix,"synth_*.png"))
-            fake_list.sort()
-            segm_list = glob.glob(os.path.join(path,prefix,"segm_*.png"))
-            segm_list.sort()
 
-            wrong_list = fake_list.copy()
-            wrong_list.append(wrong_list.pop(0))
-            wrong_seg_list = segm_list.copy()
-            wrong_seg_list.append(wrong_seg_list.pop(0))
+        # target_list = glob.glob(os.path.join(path,prefix,"target_*.png"))
+        target_list = glob.glob(os.path.join(path,prefix,"target_"+prefix+"*.png"))
+        target_list.sort()
+        # fake_list = glob.glob(os.path.join(path,prefix,"synth_*.png"))
+        fake_list = glob.glob(os.path.join(path,prefix,str(self.id)+"_"+prefix+"*.png"))
+        fake_list.sort()
+        # segm_list = glob.glob(os.path.join(path,prefix,"segm_*.png"))
+        segm_list = glob.glob(os.path.join(path,prefix,"input_"+prefix+"*.png"))
+        segm_list.sort()
 
+        wrong_list = fake_list.copy()
+        wrong_list.append(wrong_list.pop(0))
+        wrong_seg_list = segm_list.copy()
+        wrong_seg_list.append(wrong_seg_list.pop(0))
+        # TODO think about if this is still necessary
+        if is_validation and False:
             target_full_list = target_list.copy()
             fake_full_list = fake_list.copy()
             wrong_full_list = wrong_list.copy()
@@ -71,32 +100,15 @@ class Cityscapes_generated(DataBaseclass):
                 wrong_seg_list.append(wrong_seg_list.pop(0))
                 wrong_segm_full_list.extend(wrong_seg_list)
 
-
             for i in range(len(target_full_list)):
                 if fake_full_list[i].split('/')[-1].split('.')[0].split('n')[-1] is wrong_full_list[i].split('/')[-1].split('.')[0].split('n')[-1]:
                     print(fake_full_list[i].split('/')[-1].split('.')[0].split('n')[-1],wrong_full_list[i].split('/')[-1].split('.')[0].split('n')[-1])
                     raise ValueError('A image path in validation was the same for the positive and negative example')
 
-
-            # path_dics = {'labels': target_full_list,'pos': fake_full_list,'neg': wrong_full_list}
             path_dics = {'labels': target_full_list,'pos': fake_full_list,'neg': wrong_full_list, 'pos_segm': segm_full_list, 'neg_segm': wrong_segm_full_list}
 
             return path_dics, len(target_full_list)
         else:
-            target_list = glob.glob(os.path.join(path,prefix,"target_*.png"))
-            target_list.sort()
-            fake_list = glob.glob(os.path.join(path,prefix,"synth_*.png"))
-            fake_list.sort()
-            segm_list = glob.glob(os.path.join(path,prefix,"segm_*.png"))
-            segm_list.sort()
-
-
-            wrong_list = fake_list.copy()
-            wrong_list.append(wrong_list.pop(0))
-            wrong_seg_list = segm_list.copy()
-            wrong_seg_list.append(wrong_seg_list.pop(0))
-
-            # path_dics = {'labels': target_list,'pos': fake_list,'neg': wrong_list}
             path_dics = {'labels': target_list,'pos': fake_list,'neg': wrong_list, 'pos_segm': segm_list, 'neg_segm': wrong_seg_list}
 
             return path_dics, len(target_list)
@@ -108,22 +120,60 @@ class Cityscapes_generated(DataBaseclass):
         blob['neg'] = cv2.imread(image_path['neg'])
         blob['pos_segm'] = cv2.imread(image_path['pos_segm'])
         blob['neg_segm'] = cv2.imread(image_path['neg_segm'])
+
         return blob
 
     def _get_data(self, image_path, training_format=False):
         """Returns data for one given image number from the specified sequence."""
-
         blob = self._load_data(image_path)
 
-        # if training_format:
-        #     blob = augmentate(blob, **self.config['augmentation'])
-
-        # blob['rgb'] = cv2.resize(blob['rgb'], (256, 256),
-        #                          interpolation=cv2.INTER_LINEAR)
-        # blob['labels'] = cv2.resize(blob['labels'], (256, 256),
-        #                          interpolation=cv2.INTER_NEAREST)
-
         return blob
+
+    def _get_patch(self, blob, k):
+        modalities = list(blob.keys())
+        tmp_blob = {}
+        pos_blob = {}
+        return_blob = {}
+        img_h, img_w, _ = blob['labels'].shape
+        dx_h = int(img_h/self.ppd)
+        dx_w = int(img_w/self.ppd)
+
+        p_w = int(k/self.ppd)
+        p_h = k % self.ppd
+
+        h_c = dx_h * p_h
+        w_c = dx_w * p_w
+
+        ref_patch = add_gaussian_noise(blob['labels'][h_c:h_c+dx_h, w_c:w_c+dx_w, ...],self.config['augmentation']['noise'][0],self.config['augmentation']['noise'][1])
+        pos_blob['rgb'] = blob['pos'][h_c:h_c+dx_h, w_c:w_c+dx_w, ...]
+        pos_segm = blob['pos_segm'][h_c:h_c+dx_h, w_c:w_c+dx_w, ...]
+
+        pos_blob = augmentate(pos_blob, brightness=self.config['augmentation']['brightness'])
+
+        tmp_blob['rgb'] = blob['neg']
+        tmp_blob['neg_segm'] = blob['neg_segm']
+
+        pos_dist = np.mean(np.square(ref_patch-pos_blob['rgb']))
+        counter = 0
+        while(True):
+            return_blob = deepcopy(tmp_blob)
+            return_blob = augmentate(return_blob,vflip=self.config['augmentation']['vflip'],
+                                                 hflip=self.config['augmentation']['hflip'],
+                                                 crop=[1, dx_h],
+                                                 brightness=self.config['augmentation']['brightness'])
+            neg_dist = np.mean(np.square(ref_patch-return_blob['rgb']))
+
+            if(pos_dist*0.5 < neg_dist or counter is 10):
+                break
+            counter += 1
+
+        return_blob['labels'] = ref_patch
+        return_blob['pos'] = pos_blob['rgb']
+        return_blob['pos_segm'] = pos_segm
+        return_blob['neg'] = return_blob['rgb']
+        return_blob.pop('rgb',None)
+
+        return return_blob
 
     def _get_tf_dataset(self, setlist, training_format=False):
         def data_generator():
@@ -133,8 +183,12 @@ class Cityscapes_generated(DataBaseclass):
                         'neg': setlist['neg'][i],
                         'pos_segm': setlist['pos_segm'][i],
                         'neg_segm': setlist['neg_segm'][i]}
+
                 data = self._get_data(item, training_format=training_format)
-                yield data
+                for k in range(self.ppd*self.ppd):
+                    patch_data = self._get_patch(data,k)
+
+                    yield patch_data
 
         return tf.data.Dataset.from_generator(data_generator,
                                               *self.get_data_description()[:2])
