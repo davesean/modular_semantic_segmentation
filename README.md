@@ -4,6 +4,9 @@ Corresponding implementations for the IROS 2018 paper ["Modular Sensor Fusion fo
 # Introduction
 In this project the idea of quantifying the uncertainty of semantic segmentation networks is explored. This is achieved by utilizing the generative adversarial networks (GAN) ability to generate synthetic images. In this case, a conditional GAN (cGAN) is trained to learn a transformation from semantic segmentations back to RGB images. This can be useful, when the semantic segmentation fails to recognize or misclassifies foreign (Out-of-Distribution) objects. The cGAN then generates a synthetic image based on the semantic segmentation output.
 
+# Semantic Segmentation
+To have a base segmantation network, the framework already included an AdapNet implementation that could easily be trained on the Cityscapes dataset. The only modification necessary, was the use of a different aspect ratio (1:1, instead of 2:1) and size of image to work with the conditional GAN.
+
 <table>
   <tr>
     <td>
@@ -24,9 +27,6 @@ In this project the idea of quantifying the uncertainty of semantic segmentation
 </table>
 
 <sup>1</sup>Images taken from semester thesis "Uncertainties for Deep Learning-based Classification" by Sarlin. (2018)
-
-# Semantic Segmentation
-To have a base segmantation network, the framework already included an AdapNet implementation that could easily be trained on the Cityscapes dataset. The only modification necessary, was that a different aspect ratio (1:1, instead of 2:1) and size of images was necessary to work together with the conditional GAN.
 
 # Conditional GAN
 The cGAN in this implementation was based off the paper ["Image-to-Image Translation with Conditional Adversarial Networks"](https://arxiv.org/abs/1611.07004) by Isola et al (2017). As this implementation uses PyTorch, two implementation of this paper in Tensorflow were combined. ([Affinelayer's](https://github.com/affinelayer/pix2pix-tensorflow) and [Yenchenlin's](https://github.com/yenchenlin/pix2pix-tensorflow)) The cGAN is also trained on the Cityscapes dataset.
