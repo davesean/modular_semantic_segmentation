@@ -132,8 +132,20 @@ class AddRandomObjects(DataBaseclass):
         num = np.random.randint(0, len(self.file_list))
         obj, mask = self.objects[num]
 
-        obj = cv2.resize(obj, (img.shape[0],img.shape[1]))
-        mask = cv2.resize(mask, (img.shape[0],img.shape[1]),interpolation=cv2.INTER_NEAREST)
+        indices = np.where(mask==1)
+
+        minX = np.min(indices[0])
+        maxX = np.max(indices[0])
+        minY = np.min(indices[1])
+        maxY = np.max(indices[1])
+
+        scale_fac = 1.2
+
+        obj = cv2.resize(obj[minX:maxX,minY:maxY], (int(img.shape[0]/scale_fac),
+                                                    int(img.shape[1]/scale_fac)))
+        mask = cv2.resize(mask[minX:maxX,minY:maxY], (int(img.shape[0]/scale_fac),
+                                                      int(img.shape[1]/scale_fac)),
+                                                      interpolation=cv2.INTER_NEAREST)
 
         if self.config['augmentation']['obj_scale'] is not None:
             scaling = np.random.uniform(self.config['augmentation']['obj_scale'][0],

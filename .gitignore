@@ -7,3 +7,4 @@ lsf.*
 notebooks/
 .DS*
 *.yaml
+testAug.py
