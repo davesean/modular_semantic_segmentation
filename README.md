@@ -4,6 +4,17 @@ Corresponding implementations for the IROS 2018 paper ["Modular Sensor Fusion fo
 # Introduction
 In this project the idea of quantifying the uncertainty of semantic segmentation networks is explored. This is achieved by utilizing the generative adversarial networks (GAN) ability to generate synthetic images. In this case, a conditional GAN (cGAN) is trained to learn a transformation from semantic segmentations back to RGB images. This can be useful, when the semantic segmentation fails to recognize or misclassifies foreign (Out-of-Distribution) objects. The cGAN then generates a synthetic image based on the semantic segmentation output.
 
+<table>
+  <tr>
+    <td>
+       <img height="400px" src="https://github.com/davesean/modular_semantic_segmentation/rgb.png">
+    </td>
+    <td>
+       <img height="400px" src="https://github.com/davesean/modular_semantic_segmentation/segm.PNG">
+    </td>
+  </tr>
+</table>
+
 # Semantic Segmentation
 
 # Conditional GAN
