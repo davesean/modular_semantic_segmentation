@@ -16,8 +16,8 @@ def get_dataset(name):
 
 class AddRandomObjects(DataBaseclass):
 
-    _data_shape_description = {'rgb': (None, None, 3), 'labels': (None, None)}
-    _num_default_classes = 2
+    _data_shape_description = {'rgb': (None, None, 3), 'depth': (None, None, 1), 'labels': (None, None)}
+    _num_default_classes = 12
 
     def __init__(self, add_to_dataset='cityscapes', halfsize=False, animal='horse', augmentation=False,
                  in_memory=False, **data_config):
@@ -96,8 +96,7 @@ class AddRandomObjects(DataBaseclass):
         DataBaseclass.__init__(self, self.base_dataset.trainset,
                                self.base_dataset.measureset,
                                self.base_dataset.testset,
-                               {0: {'name': 'in-distribution'},
-                                1: {'name': 'out-of-distribution'}},
+                               self.base_dataset.labelinfo,
                                validation_set=self.base_dataset.validation_set,
                                num_classes=self.base_dataset._num_default_classes)
 
@@ -170,6 +169,7 @@ class AddRandomObjects(DataBaseclass):
 
         blob = {
             'rgb': img_mod,
-            'labels': mask
+            'labels': mask,
+            'depth': np.zeros(shape=[mask.shape[0],mask.shape[1],1])
         }
         return blob
