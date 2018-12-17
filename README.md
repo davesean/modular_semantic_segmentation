@@ -10,7 +10,7 @@ In this project the idea of quantifying the uncertainty of semantic segmentation
        <img height="400px" src="https://github.com/davesean/modular_semantic_segmentation/blob/publish/images/rgb.png">
     </td>
     <td>
-       <img height="400px" src="https://github.com/davesean/modular_semantic_segmentation/blob/publish/images/segm.PNG">
+       <img height="400px" src="https://github.com/davesean/modular_semantic_segmentation/blob/publish/images/segm.png">
     </td>
   </tr>
   <tr>
