@@ -29,6 +29,7 @@ In this project the idea of quantifying the uncertainty of semantic segmentation
 To have a base segmantation network, the framework already included an AdapNet implementation that could easily be trained on the Cityscapes dataset. The only modification necessary, was that a different aspect ratio (1:1, instead of 2:1) and size of images was necessary to work together with the conditional GAN.
 
 # Conditional GAN
+The cGAN in this implementation was based off the paper ["Image-to-Image Translation with Conditional Adversarial Networks"](https://arxiv.org/abs/1611.07004) by Isola et al (2017). As this implementation uses PyTorch, two implementation of this paper in Tensorflow were combined. ([Affinelayer's](https://github.com/affinelayer/pix2pix-tensorflow) and [Yenchenlin's](https://github.com/yenchenlin/pix2pix-tensorflow)) The cGAN is also trained on the Cityscapes dataset.
 
 <table>
   <tr>
@@ -49,6 +50,6 @@ To have a base segmantation network, the framework already included an AdapNet i
   </tr>
 </table>
 
-# Separate Patch Discriminator
+# Patch Discriminator
 
 # Evaluation
