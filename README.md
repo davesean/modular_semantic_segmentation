@@ -7,18 +7,18 @@ In this project the idea of quantifying the uncertainty of semantic segmentation
 <table>
   <tr>
     <td>
-       <img height="400px" src="https://github.com/davesean/modular_semantic_segmentation/blob/publish/images/rgb.png">
+       <img height="400px" src="https://github.com/davesean/modular_semantic_segmentation/blob/publish/images/target_1.png">
     </td>
     <td>
-       <img height="400px" src="https://github.com/davesean/modular_semantic_segmentation/blob/publish/images/segm.png">
+       <img height="400px" src="https://github.com/davesean/modular_semantic_segmentation/blob/publish/images/input_1.png">
     </td>
   </tr>
   <tr>
       <td>
-          <a> Urban image with unknown objects<sup>1</sup> </a>
+          <a> Urban Image with Unknown Objects<sup>1</sup> </a>
       </td>
       <td>
-          <a> Semantic Segmentation<sup>1</sup></a>
+          <a> Corresponing Semantic Segmentation</a>
       </td>
   </tr>
 </table>
@@ -26,8 +26,28 @@ In this project the idea of quantifying the uncertainty of semantic segmentation
 <sup>1</sup>Images taken from semester thesis "Uncertainties for Deep Learning-based Classification" by Sarlin. (2018)
 
 # Semantic Segmentation
+To have a base segmantation network, the framework already included an AdapNet implementation that could easily be trained on the Cityscapes dataset. The only modification necessary, was that a different aspect ratio (1:1, instead of 2:1) and size of images was necessary to work together with the conditional GAN.
 
 # Conditional GAN
+
+<table>
+  <tr>
+    <td>
+       <img height="400px" src="https://github.com/davesean/modular_semantic_segmentation/blob/publish/images/input_1.png">
+    </td>
+    <td>
+       <img height="400px" src="https://github.com/davesean/modular_semantic_segmentation/blob/publish/images/synth_1.png">
+    </td>
+  </tr>
+  <tr>
+      <td>
+          <a> Semantic Segmentation </a>
+      </td>
+      <td>
+          <a> Generated Synthetic Image</a>
+      </td>
+  </tr>
+</table>
 
 # Separate Patch Discriminator
 
