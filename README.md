@@ -13,7 +13,17 @@ In this project the idea of quantifying the uncertainty of semantic segmentation
        <img height="400px" src="https://github.com/davesean/modular_semantic_segmentation/blob/publish/segm.PNG">
     </td>
   </tr>
+  <tr>
+      <td>
+          <a> Urban image with unknown objects<sup>1</sup> </a>
+      </td>
+      <td>
+          <a> Semantic Segmentation<sup>1</sup></a>
+      </td>
+  </tr>
 </table>
+
+<sup>1</sup>Images taken from semester thesis "Uncertainties for Deep Learning-based Classification" by Sarlin. (2018)
 
 # Semantic Segmentation
 
