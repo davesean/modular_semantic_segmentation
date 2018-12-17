@@ -51,5 +51,6 @@ The cGAN in this implementation was based off the paper ["Image-to-Image Transla
 </table>
 
 # Patch Discriminator
+To quantify uncertainty, a network is needed that detects similarity or rather dissimilarity. Additionally, this dissimilarity needs to be detected locally. Therefore, a patch discriminator is trained on the Cityscapes RGB images and on the generated synthetic images. The patch discriminator is given triplets of patches, where the first patch comes from the RGB image. The second patch is taken from corresponding location in the synthetic image. The third patch is randomly cropped out of another synthetic image. In training, the first two patches are passed to the patch discriminator and labelled as a positive example, meaning that the network should return a 1. Then the network receives the first and third image as a negative example, expecting the network to return a 0.
 
 # Evaluation
