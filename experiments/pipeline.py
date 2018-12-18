@@ -85,14 +85,21 @@ def predict_network(net, output_dir, paths, data_desc, dataFlag):
         return seg, inp
     else:
         segm = np.zeros((paths['rgb'].shape))
+        segm_gt = np.zeros((paths['rgb'].shape))
         for i in range(paths['rgb'].shape[0]):
             img = np.expand_dims(paths['rgb'][i,:,:,:], axis=0)
-            data = {'rgb': img, 'depth': tf.zeros(shape=[img.shape[0],img.shape[1],img.shape[2],1],dtype=tf.float32), 'labels': tf.zeros(shape=img.shape[0:-1],dtype=tf.int32)}
+            data = {'rgb': img, 'depth': tf.zeros(shape=[img.shape[0],img.shape[1],img.shape[2],1],dtype=tf.float32),
+                                'labels': tf.zeros(shape=img.shape[0:-1],dtype=tf.int32),
+                                'mask': tf.zeros(shape=img.shape[0:-1],dtype=tf.float32)}
             output = net.predict(data)
             outputColor = data_desc.coloured_labels(labels=output)
             outputColor = outputColor[0,:,:,:]
             segm[i,:,:,:] = outputColor[...,::-1]
-        return segm, paths['rgb'], paths['mask'], paths['labels']
+
+            outputColor = data_desc.coloured_labels(labels=paths['labels'][i,:,:])
+            # outputColor = outputColor[:,:,:]
+            segm_gt[i,:,:,:] = outputColor[...,::-1]
+        return segm, paths['rgb'], paths['mask'], segm_gt
 
     # To end the experiment, we collect all produced output files and store them.
     # for filename in os.listdir(output_dir):
