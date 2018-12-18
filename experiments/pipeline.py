@@ -166,7 +166,7 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
 
     ss_run_id = starting_weights.split('/')[-2]
     gan_run_id = str(a.checkpoint)
-    folder_name = ss_run_id + "_" + gan_run_id + "_" + str(disc_config['checkpoint'])
+    folder_name = ss_run_id + "_" + gan_run_id + "_" + str(disc_config['checkpoint']) + " " + sets
     base_output_path = os.path.join(a.file_output_dir,folder_name)
     if not os.path.exists(base_output_path):
         os.makedirs(base_output_path)
