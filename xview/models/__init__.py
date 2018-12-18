@@ -5,6 +5,8 @@ from .average_mix import AverageFusion
 from .variance_mix import VarianceFusion
 from .adapnet import Adapnet
 from .fusion_fcn import FusionFCN
+from .cGAN import pix2pix
+from .similarityDiscriminator import DiffDiscrim
 
 
 def get_model(name):
@@ -22,5 +24,9 @@ def get_model(name):
         return VarianceFusion
     elif name == 'adapnet':
         return Adapnet
+    elif name == 'cGAN':
+        return pix2pix
+    elif name == 'simDisc':
+        return DiffDiscrim
     else:
         raise UserWarning('ERROR: Model %s not found' % name)

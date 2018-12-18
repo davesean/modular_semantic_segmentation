@@ -181,7 +181,7 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
         np.save(matrix_path, sem_seg_GT)
     print("Done with prediction of semantic segmentation")
 
-    synth_images = modelGAN.transform(a,sem_seg_images)
+    synth_images, _, _ = modelGAN.transform(a,sem_seg_images)
     print("Done with prediction of GAN")
 
     tf.reset_default_graph()

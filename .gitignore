@@ -5,6 +5,7 @@ lsf.*
 .cache
 .ipynb_checkpoints
 notebooks/
+configs/
 .DS*
 *.yaml
 testAug.py
