@@ -16,7 +16,7 @@ def get_dataset(name):
 
 class AddRandomObjects(DataBaseclass):
 
-    _data_shape_description = {'rgb': (None, None, 3), 'depth': (None, None, 1), 'labels': (None, None)}
+    _data_shape_description = {'rgb': (None, None, 3), 'depth': (None, None, 1), 'labels': (None, None), 'mask': (None, None)}
     _num_default_classes = 12
 
     def __init__(self, add_to_dataset='cityscapes', halfsize=False, animal='horse', augmentation=False,
@@ -124,9 +124,9 @@ class AddRandomObjects(DataBaseclass):
 
     def _get_data(self, training_format=False, **kwargs):
         # load image from base dataset
-        img = self.base_dataset._get_data(training_format=False, **kwargs)['rgb']
-
-        labels = np.zeros((img.shape[0],img.shape[1]))
+        tmp = self.base_dataset._get_data(training_format=False, **kwargs)
+        img = tmp['rgb']
+        labels = tmp['labels']
 
         # get a random object
         num = np.random.randint(0, len(self.file_list))
@@ -181,7 +181,8 @@ class AddRandomObjects(DataBaseclass):
 
         blob = {
             'rgb': img_mod,
-            'labels': mask,
-            'depth': np.zeros(shape=[mask.shape[0],mask.shape[1],1])
+            'labels': labels,
+            'depth': np.zeros(shape=[mask.shape[0],mask.shape[1],1]),
+            'mask': mask
         }
         return blob

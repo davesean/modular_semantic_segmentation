@@ -34,7 +34,7 @@ class DataBaseclass(DataWrapper):
             pass
 
     @classmethod
-    def get_data_description(cls, num_classes=None, is_GAN=False):
+    def get_data_description(cls, num_classes=None):
         """Produces a descriptor of the data the given class produces.
 
         For implementation reasons, this has to be a class method and cannot have

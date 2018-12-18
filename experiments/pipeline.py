@@ -92,7 +92,7 @@ def predict_network(net, output_dir, paths, data_desc, dataFlag):
             outputColor = data_desc.coloured_labels(labels=output)
             outputColor = outputColor[0,:,:,:]
             segm[i,:,:,:] = outputColor[...,::-1]
-        return segm, paths['rgb'], paths['labels']
+        return segm, paths['rgb'], paths['mask'], paths['labels']
 
     # To end the experiment, we collect all produced output files and store them.
     # for filename in os.listdir(output_dir):
@@ -167,9 +167,11 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
     if dataFlag:
         sem_seg_images, rgb_images = predict_output(net,output_dir,eval_image_paths,data_desc,dataFlag=dataFlag)
     else:
-        sem_seg_images, rgb_images, masks = predict_output(net,output_dir,dataset,data,dataFlag=dataFlag)
+        sem_seg_images, rgb_images, masks, sem_seg_GT = predict_output(net,output_dir,dataset,data,dataFlag=dataFlag)
         matrix_path = os.path.join(base_output_path,"mskMat.npy")
         np.save(matrix_path, masks)
+        matrix_path = os.path.join(base_output_path,"gtsMat.npy")
+        np.save(matrix_path, sem_seg_GT)
     print("Done with prediction of semantic segmentation")
 
     synth_images = modelGAN.transform(a,sem_seg_images)
