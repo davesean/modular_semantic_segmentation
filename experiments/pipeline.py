@@ -13,10 +13,6 @@ from xview.datasets import get_dataset
 from xview.models import get_model
 from xview.settings import EXP_OUT
 import sys
-sys.path.insert(0, '../pix2pix-tensorflow')
-from model import pix2pix
-sys.path.insert(0, '../Discrim')
-from diffDiscrim import DiffDiscrim
 import shutil
 
 class Helper:
@@ -101,10 +97,6 @@ def predict_network(net, output_dir, paths, data_desc, dataFlag):
             segm_gt[i,:,:,:] = outputColor[...,::-1]
         return segm, paths['rgb'], paths['mask'], segm_gt
 
-    # To end the experiment, we collect all produced output files and store them.
-    # for filename in os.listdir(output_dir):
-    #     experiment.add_artifact(os.path.join(output_dir, filename))
-
 def load_list_path(input_path):
     tmp = glob.glob(os.path.join(input_path,"*.png"))
     tmp.sort()
@@ -119,7 +111,6 @@ ex.observers.append(get_observer())
 def predict_output(net, output_dir, paths, data_desc, dataFlag, _run):
     """Predict data on a given network"""
     return predict_network(net, output_dir, paths, data_desc, dataFlag)
-
 
 @ex.main
 def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN, datasetDisc, starting_weights, input_folder, sets, _run):
@@ -153,7 +144,8 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
     # load the dataset class
     dataGAN = get_dataset(datasetGAN['name'])
     # data = data(**datasetGAN)
-    modelGAN = pix2pix(sess, checkpoint_dir=output_dir,
+    cGAN_model = get_model('cGAN')
+    modelGAN = cGAN_model(sess, checkpoint_dir=output_dir,
                     data_desc=dataGAN.get_data_description(),
                     checkpoint=os.path.join(a.EXP_OUT,str(a.checkpoint)))
     print("INFO: GAN Imported weights succesfully")
@@ -188,10 +180,10 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
     sessD = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
     dataD = get_dataset(datasetDisc['name'])
-    # data = data(dataset['image_input_dir'], ppd=dataset['ppd'])
     dataD = dataD(datasetDisc['image_input_dir'],**datasetDisc)
-
-    modelDiff=DiffDiscrim(sess=sessD, checkpoint_dir=output_dir, data=dataD,
+    disc_model = get_model('simDisc')
+    modelDiff=disc_model(sess=sessD, checkpoint_dir=output_dir, data=dataD,
+                          is_training=False,
                       checkpoint=os.path.join(a.EXP_OUT,str(disc_config['checkpoint'])))
     print("INFO: Disc Imported weights succesfully")
 

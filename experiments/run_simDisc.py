@@ -1,14 +1,13 @@
 import tensorflow as tf
 import sys
-sys.path.insert(0, '../modular_semantic_segmentation')
 
 from experiments.utils import get_observer
 
 from xview.datasets import Cityscapes_generated
 from xview.datasets import get_dataset
+from xview.models import get_model
 from xview.settings import EXP_OUT
 
-from diffDiscrim import DiffDiscrim
 import os
 import sacred as sc
 import shutil
@@ -69,13 +68,12 @@ def main(dataset, net_config, _run):
 
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
     with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
-        # data = Cityscapes_generated(base_path="/Users/David/masterThesis/pix2pix-tensorflow/dir/224_full")
         data = get_dataset(dataset['name'])
-        # data = data(dataset['image_input_dir'], ppd=dataset['ppd'])
         data = data(dataset['image_input_dir'],**dataset)
         data_id=dataset['image_input_dir'].split('/')[-1].split('_')[0]
         setattr(a,'DATA_id',data_id)
-        model=DiffDiscrim(sess=sess, image_size=a.input_image_size,
+        disc_model = get_model('simDisc')
+        model=disc_model(sess=sess, image_size=a.input_image_size,
                      batch_size=a.batch_size, df_dim=a.ndf,
                      input_c_dim=3,
                      checkpoint_dir=output_dir, data=data,

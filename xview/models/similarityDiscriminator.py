@@ -62,8 +62,8 @@ def dense(input_, output_size, num_channels, name="dense", reuse=False, stddev=0
 
 class DiffDiscrim(object):
     def __init__(self, sess, image_size=256,
-                 batch_size=64, df_dim=64,
-                 input_c_dim=3,
+                 batch_size=64, df_dim=64, ppd=8,
+                 input_c_dim=3, is_training=True,
                  checkpoint_dir=None, data=None, momentum=0.9, checkpoint=None):
         """
         Args:
@@ -71,6 +71,7 @@ class DiffDiscrim(object):
             image_size: Width and height of image. Should be square image.
             batch_size: The size of batch. Should be specified before training.
             input_c_dim: (optional) Dimension of input image color. For grayscale input, set to 1. [3]
+            is_training: Flag for batch normalization to know
             df_dim: Number of filters in the first layer. Doubled with each following layer.
             checkpoint_dir: Directory where the checkpoint will be saved.
             data: Data object, used to get the shape of data and called to return datasets.
@@ -78,6 +79,7 @@ class DiffDiscrim(object):
             checkpoint: Directory where the current checkpoint is that will be loaded
         """
         self.sess = sess
+        self.ppd = 8
         self.is_grayscale = (input_c_dim == 1)
         self.batch_size = batch_size
         self.image_size = image_size
@@ -108,15 +110,14 @@ class DiffDiscrim(object):
             self.iter_handle, *data_description)
         training_batch = iterator.get_next()
 
-        # self.build_model(training_batch['labels'], training_batch['rgb'])
-
         self.build_model(training_batch['labels'],training_batch['pos'],training_batch['neg'],training_batch['pos_segm'],training_batch['neg_segm'])
 
         if checkpoint is not None and not(checkpoint.split('/')[-1] == "None"):
             self.load(checkpoint)
             self.checkpoint_loaded = True
-            # assign_flag_op = self.train_flag.assign(False)
-            # self.sess.run(assign_flag_op)
+            if not is_training:
+                assign_flag_op = self.train_flag.assign(False)
+                self.sess.run(assign_flag_op)
 
     def build_model(self, target, pos, neg, pos_segm, neg_segm):
         self.target_placeholder = preprocess(target)
@@ -125,6 +126,7 @@ class DiffDiscrim(object):
         self.pos_segm_placeholder = preprocess(pos_segm)
         self.neg_segm_placeholder = preprocess(neg_segm)
         self.train_flag = tf.Variable(True, name="Train_flag")
+
         # PosExample = tf.concat([self.target_placeholder, self.pos_placeholder, self.pos_segm_placeholder], 3)
         # NegExample = tf.concat([self.target_placeholder, self.neg_placeholder, self.neg_segm_placeholder], 3)
 
@@ -138,7 +140,6 @@ class DiffDiscrim(object):
         self.d_loss_neg = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits_, labels=tf.ones_like(self.D_)))
 
         self.d_loss = self.d_loss_pos + self.d_loss_neg
-        # self.d_loss = tf.Print(self.d_loss, [self.d_loss],"Loss: ")
         self.d_sum = tf.summary.histogram("d", self.D)
         self.d__sum = tf.summary.histogram("d_", self.D_)
         self.target_sum = tf.summary.image("Target", target[...,::-1])
@@ -169,11 +170,11 @@ class DiffDiscrim(object):
             self.negativ_sum, self.d_loss_pos_sum, self.d_sum, self.d_loss_neg_sum, self.d_loss_sum])
 
         self.writer = tf.summary.FileWriter(self.checkpoint_dir, self.sess.graph)
-
-        if args.checkpoint is not None and self.load(os.path.join(args.EXP_OUT,str(args.checkpoint))):
-            print(" [*] Load SUCCESS")
-        else:
-            print(" [!] Load failed...")
+        if not self.checkpoint_loaded:
+            if args.checkpoint is not None and self.load(os.path.join(args.EXP_OUT,str(args.checkpoint))):
+                print(" [*] Load SUCCESS")
+            else:
+                print(" [!] Load failed...")
 
         input_data = self.data.get_trainset()
         data_iterator = input_data.repeat(args.max_epochs).batch(args.batch_size).make_one_shot_iterator()
@@ -227,7 +228,6 @@ class DiffDiscrim(object):
             else:
                 print(" [!] Load failed...")
                 raise ValueError('Could not load checkpoint and that is needed for validation')
-        # args.batch_size=1
         input_data, num_validation = self.data.get_validation_set()
         data_iterator = input_data.repeat(1).batch(args.batch_size).make_one_shot_iterator()
         data_handle = self.sess.run(data_iterator.string_handle())
@@ -250,33 +250,32 @@ class DiffDiscrim(object):
         return pred_array
 
     def predict(self, args, inputImage, ganImage, segmImage):
-        """ Predict similarity between images """
-        counter = 1
-        ppd = 8
-        dx_h = int(args.input_image_size/ppd)
-        dx_w = int(args.input_image_size/ppd)
+        """ Predict similarity between images given in lists """
+        dx_h = int(args.input_image_size/self.ppd)
+        dx_w = int(args.input_image_size/self.ppd)
         pred_array = np.zeros((len(inputImage),2))
 
         # Check that a checkpoint directory is given, to load from
-        assert(args.checkpoint is not None)
-        self.load(os.path.join(args.EXP_OUT,str(args.checkpoint)))
+        if not self.checkpoint_loaded:
+            assert(args.checkpoint is not None)
+            self.load(os.path.join(args.EXP_OUT,str(args.checkpoint)))
 
         if not os.path.exists(os.path.join(args.file_output_dir,str(args.checkpoint))):
             os.makedirs(os.path.join(args.file_output_dir,str(args.checkpoint)))
 
-        for image_path in inputImage:
+        for k,image_path in enumerate(inputImage):
             input = np.expand_dims(cv2.imread(image_path), axis=0)
-            synth = np.expand_dims(cv2.imread(ganImage[counter-1]), axis=0)
-            segm = np.expand_dims(cv2.imread(segmImage[counter-1]), axis=0)
+            synth = np.expand_dims(cv2.imread(ganImage[k]), axis=0)
+            segm = np.expand_dims(cv2.imread(segmImage[k]), axis=0)
 
             input_patch = []
             synth_patch = []
             segm_patch = []
 
-            output_image = np.zeros((ppd,ppd))
+            output_image = np.zeros((self.ppd,self.ppd))
 
-            for j in range(ppd):
-                for i in range(ppd):
+            for j in range(self.ppd):
+                for i in range(self.ppd):
                     if (i<1 and j<1):
                         input_patch = input[:,j*dx_h:(j+1)*dx_h,i*dx_w:(i+1)*dx_w,:]
                         synth_patch = synth[:,j*dx_h:(j+1)*dx_h,i*dx_w:(i+1)*dx_w,:]
@@ -286,27 +285,24 @@ class DiffDiscrim(object):
                         synth_patch=np.concatenate((synth_patch,synth[:,j*dx_h:(j+1)*dx_h,i*dx_w:(i+1)*dx_w,:]),axis=0)
                         segm_patch=np.concatenate((segm_patch,segm[:,j*dx_h:(j+1)*dx_h,i*dx_w:(i+1)*dx_w,:]),axis=0)
 
-
-            #data = {'labels': tf.to_float(input_patch), 'pos': tf.to_float(synth_patch), 'neg': tf.zeros_like(tf.to_float(synth_patch)) }
             data = {'labels': tf.to_float(input_patch), 'pos': tf.to_float(synth_patch), 'neg': tf.zeros_like(tf.to_float(synth_patch)),'pos_segm': tf.to_float(segm_patch), 'neg_segm': tf.zeros_like(tf.to_float(segm_patch)) }
 
             iterator = tf.data.Dataset.from_tensor_slices(data)\
-                       .batch(ppd*ppd).make_one_shot_iterator()
+                       .batch(self.ppd*self.ppd).make_one_shot_iterator()
             handle = self.sess.run(iterator.string_handle())
 
             output = self.sess.run(self.D, feed_dict={self.iter_handle: handle})
-            output = output[:,0,0,0].reshape((ppd,ppd))
-            pred_array[counter-1,:] = [counter, np.mean(output)]
+            output = output[:,0,0,0].reshape((self.ppd,self.ppd))
+            pred_array[k,:] = [k+1, np.mean(output)]
 
-            if counter == 1:
+            if (k+1) == 1:
                 output_matrix = np.expand_dims(output, axis=0)
             else:
                 output_matrix = np.concatenate((output_matrix, np.expand_dims(output, axis=0)),axis=0)
 
-            filename = "simGrid_"+str(counter)+".png"
+            filename = "simGrid_"+str(k+1)+".png"
             cv2.imwrite(os.path.join(args.file_output_dir,str(args.checkpoint),filename), cv2.resize(255*output,(args.input_image_size,args.input_image_size),interpolation=cv2.INTER_NEAREST))
-            counter += 1
-        # np.set_printoptions(precision=3)
+
         matrix_path = os.path.join(args.file_output_dir,str(args.checkpoint),"mat.npy")
         np.save(matrix_path, output_matrix)
 
@@ -315,15 +311,13 @@ class DiffDiscrim(object):
         for i in range(len(inputImage)):
             print("%d. \t %f" % (pred_array[i,0],pred_array[i,1]))
             text_file.write("%d. \t %f \n" % (pred_array[i,0],pred_array[i,1]))
-            # print(pred_array)
         text_file.close()
 
     def transform(self, realImages, synthImages, segmImages):
         """ Predict similarity between images """
         counter = 1
-        ppd = 8
-        dx_h = int(realImages.shape[1]/ppd)
-        dx_w = int(realImages.shape[1]/ppd)
+        dx_h = int(realImages.shape[1]/self.ppd)
+        dx_w = int(realImages.shape[1]/self.ppd)
 
         # Check that a checkpoint directory is given, to load from
         if not self.checkpoint_loaded:
@@ -339,8 +333,8 @@ class DiffDiscrim(object):
             synth_patch = []
             segm_patch = []
 
-            for j in range(ppd):
-                for i in range(ppd):
+            for j in range(self.ppd):
+                for i in range(self.ppd):
                     if (i<1 and j<1):
                         input_patch = input[:,j*dx_h:(j+1)*dx_h,i*dx_w:(i+1)*dx_w,:]
                         synth_patch = synth[:,j*dx_h:(j+1)*dx_h,i*dx_w:(i+1)*dx_w,:]
@@ -350,15 +344,14 @@ class DiffDiscrim(object):
                         synth_patch=np.concatenate((synth_patch,synth[:,j*dx_h:(j+1)*dx_h,i*dx_w:(i+1)*dx_w,:]),axis=0)
                         segm_patch=np.concatenate((segm_patch,segm[:,j*dx_h:(j+1)*dx_h,i*dx_w:(i+1)*dx_w,:]),axis=0)
 
-            #data = {'labels': tf.to_float(input_patch), 'pos': tf.to_float(synth_patch), 'neg': tf.zeros_like(tf.to_float(synth_patch)) }
             data = {'labels': tf.to_float(input_patch), 'pos': tf.to_float(synth_patch), 'neg': tf.zeros_like(tf.to_float(synth_patch)),'pos_segm': tf.to_float(segm_patch), 'neg_segm': tf.zeros_like(tf.to_float(segm_patch)) }
 
             iterator = tf.data.Dataset.from_tensor_slices(data)\
-                       .batch(ppd*ppd).make_one_shot_iterator()
+                       .batch(self.ppd*self.ppd).make_one_shot_iterator()
             handle = self.sess.run(iterator.string_handle())
 
             output = self.sess.run(self.D, feed_dict={self.iter_handle: handle})
-            output = output[:,0,0,0].reshape((ppd,ppd))
+            output = output[:,0,0,0].reshape((self.ppd,self.ppd))
 
             if counter == 1:
                 output_matrix = np.expand_dims(output, axis=0)
@@ -428,6 +421,7 @@ class DiffDiscrim(object):
             # h4 is (8 x 8 x 1)
 
             return tf.nn.sigmoid(h4), h4
+
     def save(self, checkpoint_dir, step, id):
         model_name = "diffDiscrim"+id+".model"
         self.saver.save(self.sess,
