@@ -12,6 +12,7 @@ from xview.settings import DATA_BASEPATH
 from .data_baseclass import DataBaseclass
 from .augmentation import augmentate, crop_multiple, add_gaussian_noise
 from copy import deepcopy
+from PIL import Image
 # from sys import stdout
 
 CITYSCAPES_BASEPATH = path.join(DATA_BASEPATH, 'cityscapes')
@@ -153,19 +154,29 @@ class Cityscapes_generated(DataBaseclass):
         tmp_blob['rgb'] = blob['neg']
         tmp_blob['neg_segm'] = blob['neg_segm']
 
-        pos_dist = np.mean(np.square(ref_patch-pos_blob['rgb']))
+
         counter = 0
         while(True):
             return_blob = deepcopy(tmp_blob)
             return_blob = augmentate(return_blob,vflip=self.config['augmentation']['vflip'],
                                                  hflip=self.config['augmentation']['hflip'],
                                                  crop=[1, dx_h],
-                                                 brightness=self.config['augmentation']['brightness'])
-            neg_dist = np.mean(np.square(ref_patch-return_blob['rgb']))
+                                                 brightness=self.config['augmentation']['brightness'],
+                                                 contrast=self.config['augmentation']['contrast'],
+                                                 gamma=self.config['augmentation']['gamma'])
 
-            if(pos_dist*0.5 < neg_dist or counter is 10):
+            tmp = (return_blob['neg_segm'] == pos_segm)
+            sameMask = np.logical_and(np.logical_and(tmp[:,:,0],tmp[:,:,1]),tmp[:,:,2])
+
+            if(np.sum(sameMask)/sameMask.size < 0.5 or counter is 20):
+                if(counter == 20):
+                    print("Reached counter 20 in finding neg patch loop")
                 break
             counter += 1
+
+        # stack = np.concatenate([ref_patch[...,::-1], pos_blob['rgb'][...,::-1], return_blob['rgb'][...,::-1]],axis=0)
+        # img = Image.fromarray(stack, 'RGB')
+        # img.show()
 
         return_blob['labels'] = ref_patch
         return_blob['pos'] = pos_blob['rgb']
