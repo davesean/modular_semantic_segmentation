@@ -56,7 +56,7 @@ class Cityscapes_GAN(DataBaseclass):
         }
         self.modality_suffixes = {
                 'rgb': 'leftImg8bit',
-                'labels': 'gtFine_color',
+                'labels': 'gtFine_labelIds',
         }
         self.in_memory = in_memory
 
@@ -168,7 +168,11 @@ class Cityscapes_GAN(DataBaseclass):
         blob = {}
         blob['rgb'] = cv2.imread(rgb_filename)
         #blob['depth'] = cv2.imread(depth_filename, cv2.IMREAD_ANYDEPTH)
-        blob['labels'] = cv2.imread(labels_filename)
+        # blob['labels'] = cv2.imread(labels_filename)
+        blob['labels'] = cv2.imread(labels_filename, cv2.IMREAD_ANYDEPTH)
+        # apply label mapping
+        blob['labels'] = np.asarray(self.label_lookup, dtype='int32')[blob['labels']]
+        blob['labels'] = self.coloured_labels(labels=blob['labels'])[...,::-1]
 
         if self.config['resize']:
             blob['rgb'] = cv2.resize(blob['rgb'], (286, 286),
