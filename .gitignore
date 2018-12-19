@@ -4,6 +4,7 @@ experiments/*.yaml
 lsf.*
 .cache
 .ipynb_checkpoints
+dir/
 notebooks/
 configs/
 .DS*
