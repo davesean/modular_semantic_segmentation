@@ -137,28 +137,42 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
         data = data_desc(**datasetSem)
         dataset = data.get_validation_set(tf_dataset=False)
 
-    # create the network
-    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
-    sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
-
-    # load the dataset class
-    dataGAN = get_dataset(datasetGAN['name'])
-    # data = data(**datasetGAN)
-    cGAN_model = get_model('cGAN')
-    modelGAN = cGAN_model(sess, checkpoint_dir=output_dir,
-                    data_desc=dataGAN.get_data_description(),
-                    checkpoint=os.path.join(a.EXP_OUT,str(a.checkpoint)))
-    print("INFO: GAN Imported weights succesfully")
-
     model = get_model(modelname)
     net = model(data_description=data_desc.get_data_description(),
                 output_dir=output_dir, **net_config)
     net.import_weights(filepath=starting_weights)
     print("INFO: Imported weights succesfully")
 
+    GAN_graph = tf.Graph()
+    with GAN_graph.as_default():
+        # create the network
+        gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
+        GAN_sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+        # load the dataset class
+        dataGAN = get_dataset(datasetGAN['name'])
+        # data = data(**datasetGAN)
+        cGAN_model = get_model('cGAN')
+        modelGAN = cGAN_model(GAN_sess, checkpoint_dir=output_dir,
+                        data_desc=dataGAN.get_data_description(),
+                        checkpoint=os.path.join(a.EXP_OUT,str(a.checkpoint)))
+        print("INFO: GAN Imported weights succesfully")
+
+    # tf.reset_default_graph()
+    Disc_graph = tf.Graph()
+    with Disc_graph.as_default():
+        gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
+        sessD = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+        dataD = get_dataset(datasetDisc['name'])
+        dataD = dataD(datasetDisc['image_input_dir'],**datasetDisc)
+        disc_model = get_model('simDisc')
+        modelDiff=disc_model(sess=sessD, checkpoint_dir=output_dir, data=dataD,
+                              is_training=False,
+                          checkpoint=os.path.join(a.EXP_OUT,str(disc_config['checkpoint'])))
+        print("INFO: Disc Imported weights succesfully")
+
     ss_run_id = starting_weights.split('/')[-2]
     gan_run_id = str(a.checkpoint)
-    folder_name = ss_run_id + "_" + gan_run_id + "_" + str(disc_config['checkpoint']) + " " + sets
+    folder_name = ss_run_id + "_" + gan_run_id + "_" + str(disc_config['checkpoint']) + "_" + sets
     base_output_path = os.path.join(a.file_output_dir,folder_name)
     if not os.path.exists(base_output_path):
         os.makedirs(base_output_path)
@@ -173,21 +187,15 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
         np.save(matrix_path, sem_seg_GT)
     print("Done with prediction of semantic segmentation")
 
-    synth_images, _, _ = modelGAN.transform(a,sem_seg_images)
-    print("Done with prediction of GAN")
+    with GAN_sess.as_default():
+        with GAN_graph.as_default():
+            synth_images = modelGAN.transform(a,sem_seg_images)
+            print("Done with prediction of GAN")
 
-    tf.reset_default_graph()
-    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
-    sessD = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
-    dataD = get_dataset(datasetDisc['name'])
-    dataD = dataD(datasetDisc['image_input_dir'],**datasetDisc)
-    disc_model = get_model('simDisc')
-    modelDiff=disc_model(sess=sessD, checkpoint_dir=output_dir, data=dataD,
-                          is_training=False,
-                      checkpoint=os.path.join(a.EXP_OUT,str(disc_config['checkpoint'])))
-    print("INFO: Disc Imported weights succesfully")
 
-    simMat = modelDiff.transform(rgb_images, synth_images, sem_seg_images)
+    with sessD.as_default():
+        with Disc_graph.as_default():
+            simMat = modelDiff.transform(rgb_images, synth_images, sem_seg_images)
 
     matrix_path = os.path.join(base_output_path,"simMat.npy")
     np.save(matrix_path, simMat)

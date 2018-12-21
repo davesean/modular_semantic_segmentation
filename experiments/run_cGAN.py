@@ -90,13 +90,19 @@ def main(dataset, net_config, _run):
         data = get_dataset(dataset['name'])
         data = data(**dataset)
         cGAN_model = get_model('cGAN')
+        if a.checkpoint is not None:
+            ckp = os.path.join(a.EXP_OUT,str(a.checkpoint))
+        else:
+            ckp = None
         model = cGAN_model(sess, image_size=a.input_image_size, batch_size=a.batch_size,
                         output_size=a.input_image_size, dataset_name=dataset['name'],
                         checkpoint_dir=output_dir, data=data,
                         data_desc=data.get_data_description(), momentum=a.batch_momentum,
                         L1_lambda=int(a.l1_weight/a.gan_weight), gf_dim=a.ngf,
                         df_dim=a.ndf,label_smoothing=a.label_smoothing,
-                        noise_std_dev=a.noise_std_dev)
+                        noise_std_dev=a.noise_std_dev,
+                        checkpoint=ckp)
+
         if a.mode == 'train':
             tmp = model.train(a)
             _run.info['predictions'] = tmp

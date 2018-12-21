@@ -107,6 +107,7 @@ class pix2pix(object):
         training_batch = iterator.get_next()
 
         self.build_model(training_batch['labels'], training_batch['rgb'])
+
         if checkpoint is not None:
             self.load(checkpoint)
             self.checkpoint_loaded = True
@@ -351,7 +352,6 @@ class pix2pix(object):
             filename = "synth_"+str(i+1)+".png"
             cv2.imwrite(os.path.join(args.file_output_dir,str(args.checkpoint),filename), deprocess(outImage[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
 
-
     def transform(self, args, images):
         """Transforms dataset from single images
         This is used for pipeline usage.
@@ -373,7 +373,49 @@ class pix2pix(object):
 
             synth[i,:,:,:] = deprocess(outImage[0])
 
-        return synth, realfield, fakefield
+        return synth
+
+    def transformDatasets(self, args):
+        """Transforms complete dataset
+        """
+        # Check that a checkpoint was loaded at init
+        assert(self.checkpoint_loaded is not False)
+        set_handles = {}
+        subsets = ['validation','measure','training']
+
+        validation_data = self.data.get_validation_set()
+        valid_iterator = validation_data.batch(1).make_one_shot_iterator()
+        set_handles['validation'] = self.sess.run(valid_iterator.string_handle())
+
+        measure_data = self.data.get_measureset()
+        measure_iterator = measure_data.batch(1).make_one_shot_iterator()
+        set_handles['measure'] = self.sess.run(measure_iterator.string_handle())
+
+        training_data = self.data.get_trainset()
+        training_iterator = training_data.batch(1).make_one_shot_iterator()
+        set_handles['training'] = self.sess.run(training_iterator.string_handle())
+
+        for sets in subsets:
+            local_folder = os.path.join(args.file_output_dir,str(args.checkpoint)+"_full",sets)
+            if not os.path.exists(local_folder):
+                os.makedirs(local_folder)
+            while True:
+                # Retrieve everything you want from of the graph
+                try:
+                    outImage, inpt, target = self.sess.run([self.fake_B,self.real_A,self.real_B],
+                                                   feed_dict={ self.iter_handle: valid_handle })
+                # When tf dataset is empty this error is thrown
+                except tf.errors.OutOfRangeError:
+                    print("INFO: Done with "+sets+" set")
+                    break
+
+                # Save the output of the generator
+                filename = str(args.checkpoint)+"_"+ sets + str(counter) + ".png"
+                cv2.imwrite(os.path.join(args.file_output_dir,str(args.checkpoint),filename), deprocess(outImage[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                filename = "input_" + sets + str(counter) + ".png"
+                cv2.imwrite(os.path.join(args.file_output_dir,filename), deprocess(inpt[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                filename = "target_"+ sets + str(counter) + ".png"
+                cv2.imwrite(os.path.join(args.file_output_dir,filename), deprocess(target[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
 
     def discriminator(self, image, y=None, reuse=False):
 
