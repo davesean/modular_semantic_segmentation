@@ -99,7 +99,8 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
     setattr(a,'RUN_id',_run._id)
     setattr(b,'EXP_OUT',EXP_OUT)
     setattr(b,'RUN_id',_run._id)
-    # Set up the directories for diagnostics
+    data_id=datasetDisc['image_input_dir'].split('/')[-1].split('_')[0]
+    setattr(b,'DATA_id',data_id)    # Set up the directories for diagnostics
     output_dir = create_directories(_run._id, ex)
 
     # load the data for the data description
@@ -134,7 +135,7 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
         disc_model = get_model('simDisc')
         modelDiff=disc_model(sess=sessD, checkpoint_dir=output_dir, data=dataD)
         print("INFO: Begin training simDisc")
-        tmp = model.train(b)
+        tmp = modelDiff.train(b)
         _run.info['simDisc_predictions'] = tmp
         _run.info['simDisc_mean_predictions'] = np.mean(tmp, axis=0)
         print("INFO: Finished training simDisc")
@@ -142,19 +143,19 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
 
     benchmarks = ['valid','wilddash','pos_neg_set','measure']
     for set in benchmarks:
-        if set == "wilddash":
-            #TODO Get wilddash images and load them into 4D array
-            #Put into dic: labels,rgb and mask -> after SemSeg, if semSeg is off -> mask 1, else 0
-            #TODO Don't forget to transform labels like cityscapes -> coloured_labels func
-        elif set == "measure":
+        # if set == "wilddash":
+        #     #TODO Get wilddash images and load them into 4D array
+        #     #Put into dic: labels,rgb and mask -> after SemSeg, if semSeg is off -> mask 1, else 0
+        #     #TODO Don't forget to transform labels like cityscapes -> coloured_labels func
+        if set == "measure":
             data = data_desc(**datasetSem)
             dataset = data.get_measureset(tf_dataset=False)
         elif set == "valid":
             data = data_desc(**datasetSem)
             dataset = data.get_validation_set(tf_dataset=False)
-        else:
-            #TODO Get nine/nine images and load them into 4D array
-            #Put into dic: labels empty,rgb images and mask -> for 9 neg, 1 mask, for 9 pos 0 mask
+        # else:
+        #     #TODO Get nine/nine images and load them into 4D array
+        #     #Put into dic: labels empty,rgb images and mask -> for 9 neg, 1 mask, for 9 pos 0 mask
 
 
 

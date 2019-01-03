@@ -112,7 +112,7 @@ def main(dataset, net_config, _run):
             _run.info['predictions'] = tmp
             _run.info['mean_predictions'] = np.mean(tmp, axis=0)
         else:
-            model.outputAllData(a)
+            model.transformDatasets(a)
 
 
 if __name__ == '__main__':

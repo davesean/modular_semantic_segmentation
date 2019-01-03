@@ -395,15 +395,20 @@ class pix2pix(object):
         training_iterator = training_data.batch(1).make_one_shot_iterator()
         set_handles['training'] = self.sess.run(training_iterator.string_handle())
 
+        head_folder = os.path.join(args.file_output_dir,str(args.checkpoint)+"_full")
+        if not os.path.exists(head_folder):
+            os.makedirs(head_folder)
+
         for sets in subsets:
-            local_folder = os.path.join(args.file_output_dir,str(args.checkpoint)+"_full",sets)
+            counter = 1
+            local_folder = os.path.join(head_folder,sets)
             if not os.path.exists(local_folder):
                 os.makedirs(local_folder)
             while True:
                 # Retrieve everything you want from of the graph
                 try:
                     outImage, inpt, target = self.sess.run([self.fake_B,self.real_A,self.real_B],
-                                                   feed_dict={ self.iter_handle: valid_handle })
+                                                   feed_dict={ self.iter_handle: set_handles[sets] })
                 # When tf dataset is empty this error is thrown
                 except tf.errors.OutOfRangeError:
                     print("INFO: Done with "+sets+" set")
@@ -411,11 +416,12 @@ class pix2pix(object):
 
                 # Save the output of the generator
                 filename = str(args.checkpoint)+"_"+ sets + str(counter) + ".png"
-                cv2.imwrite(os.path.join(args.file_output_dir,str(args.checkpoint),filename), deprocess(outImage[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                cv2.imwrite(os.path.join(local_folder,filename), deprocess(outImage[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
                 filename = "input_" + sets + str(counter) + ".png"
-                cv2.imwrite(os.path.join(args.file_output_dir,filename), deprocess(inpt[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                cv2.imwrite(os.path.join(local_folder,filename), deprocess(inpt[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
                 filename = "target_"+ sets + str(counter) + ".png"
-                cv2.imwrite(os.path.join(args.file_output_dir,filename), deprocess(target[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                cv2.imwrite(os.path.join(local_folder,filename), deprocess(target[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                counter +=1
 
     def discriminator(self, image, y=None, reuse=False):
 
