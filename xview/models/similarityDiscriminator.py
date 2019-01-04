@@ -218,7 +218,7 @@ class DiffDiscrim(object):
                     break
             globalCounter += 1
             localCounter += 1
-
+        self.checkpoint_loaded = True
         return self.validation(args, loaded=True)
 
     def validation(self, args, out=False, loaded=False):
@@ -321,8 +321,8 @@ class DiffDiscrim(object):
 
         # Check that a checkpoint directory is given, to load from
         if not self.checkpoint_loaded:
-            assert(args.checkpoint is not None)
-            self.load(os.path.join(args.EXP_OUT,str(args.checkpoint)))
+            assert(False, "No checkpoint loaded, load one at init of model.")
+
 
         for k in range(realImages.shape[0]):
             input = np.expand_dims(realImages[k,:,:,:],axis=0)
