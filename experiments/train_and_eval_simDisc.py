@@ -22,6 +22,11 @@ class Helper:
 a = Helper()
 b = Helper()
 
+def error_mask(segm_image, gt_image):
+    mask_3d = (segm_image == gt_image)
+    mask = np.logical_and(mask_3d[:,:,2],np.logical_and(mask_3d[:,:,0],mask_3d[:,:,1]))
+    return ~mask
+
 def create_directories(run_id, experiment):
     """
     Make sure directories for storing diagnostics are created and clean.
@@ -74,10 +79,20 @@ def predict_network(net, output_dir, paths, data_desc):
         outputColor = outputColor[0,:,:,:]
         segm[i,:,:,:] = outputColor[...,::-1]
 
+    if 'mask' in paths:
+        # TODO this label conversion is done in wilddash already, make in uniform
+        # that its either always done in the dataset or never
         outputColor = data_desc.coloured_labels(labels=paths['labels'][i,:,:])
         # outputColor = outputColor[:,:,:]
         segm_gt[i,:,:,:] = outputColor[...,::-1]
-    return segm, paths['rgb'], paths['mask'], segm_gt
+        return segm, paths['rgb'], paths['mask'], segm_gt
+    # This if branch is needed as wilddash doesn't have a mask and it is generated
+    # based off of the error of the segmentation.
+    else:
+        mask = error_mask(segm, paths['labels'][i,:,:])
+        return segm, paths['rgb'], mask, paths['labels'][i,:,:]
+
+
 
 ex = sc.Experiment()
 # reduce output of progress bars
@@ -141,23 +156,19 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
         print("INFO: Finished training simDisc")
 
 
-    benchmarks = ['valid','wilddash','pos_neg_set','measure']
+    benchmarks = ['valid','wilddash','posneg','measure']
     for set in benchmarks:
-        # if set == "wilddash":
-        #     #TODO Get wilddash images and load them into 4D array
-        #     #Put into dic: labels,rgb and mask -> after SemSeg, if semSeg is off -> mask 1, else 0
-        #     #TODO Don't forget to transform labels like cityscapes -> coloured_labels func
         if set == "measure":
             data = data_desc(**datasetSem)
             dataset = data.get_measureset(tf_dataset=False)
         elif set == "valid":
             data = data_desc(**datasetSem)
             dataset = data.get_validation_set(tf_dataset=False)
-        # else:
-        #     #TODO Get nine/nine images and load them into 4D array
-        #     #Put into dic: labels empty,rgb images and mask -> for 9 neg, 1 mask, for 9 pos 0 mask
-
-
+        else:
+            data = get_dataset(set)
+            head, _ = os.path.split(datasetDisc['image_input_dir'])
+            data = data(os.path.join(head,set))
+            dataset = data.get_validation_set(tf_dataset=False)
 
         sem_seg_images, rgb_images, masks, _ = predict_output(net,output_dir,dataset,data)
 

@@ -14,7 +14,7 @@ POSNEG_BASEPATH = path.join(DATA_BASEPATH, 'posneg')
 
 class POSNEG(DataBaseclass):
     _data_shape_description = {
-            'rgb': (None, None, 3), 'labels': (None, None)}
+            'rgb': (None, None, 3), 'labels': (None, None), 'mask': (None, None) }
     _num_default_classes = 2
 
     def __init__(self, base_path=POSNEG_BASEPATH, batchsize=1, **data_config):
@@ -67,22 +67,22 @@ class POSNEG(DataBaseclass):
         blob = {}
         blob['rgb'] = cv2.imread(image_path)
         prefix = image_path.split('/')[-1]
-        # Depending on if the image loaded is assumed positive or negative,
-        # the mask generated needs to reflect that
+        # Depending on if the image loaded is assumed positive (0, in-dist)
+        # or negative (1, OoD), the mask generated needs to reflect that
         if prefix[0:len(self.image_prefixes['pos'])] == self.image_prefixes['pos']:
-            blob['labels'] = np.ones((blob['rgb'].shape[0],blob['rgb'].shape[1]))
+            blob['mask'] = np.zeros((blob['rgb'].shape[0],blob['rgb'].shape[1]))
         elif prefix[0:len(self.image_prefixes['neg'])] == self.image_prefixes['neg']:
-            blob['labels'] = np.zeros((blob['rgb'].shape[0],blob['rgb'].shape[1]))
+            blob['mask'] = np.ones((blob['rgb'].shape[0],blob['rgb'].shape[1]))
         else:
             assert(False, prefix[0:2]+" was not an image prefix")
         # Resize the image to the necessary size, hard coded below!
         if self.config['resize']:
             blob['rgb'] = cv2.resize(blob['rgb'], (256, 256),
                                      interpolation=cv2.INTER_LINEAR)
-            for m in ['labels']:
+            for m in ['mask']:
                 blob[m] = cv2.resize(blob[m], (256, 256),
                                      interpolation=cv2.INTER_NEAREST)
-
+        blob['labels'] = np.zeros((blob['mask'].shape[0],blob['mask'].shape[1]))
         return blob
 
     def _get_data(self, image_path):

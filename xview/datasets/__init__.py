@@ -7,6 +7,8 @@ from .cityscapes_generated import Cityscapes_generated
 from .synthia_rand import SynthiaRand
 from .mixed_data import MixedData
 from .not_cityscapes import AddRandomObjects
+from .pos_neg import POSNEG
+from .wilddash import Wilddash
 
 
 def get_dataset(name):
@@ -26,6 +28,10 @@ def get_dataset(name):
         return Cityscapes_generated
     elif name == 'synthiarand':
         return SynthiaRand
+    elif name == 'posneg':
+        return POSNEG
+    elif name == 'wilddash':
+        return Wilddash
     if name == 'mixeddata':
         return MixedData
     else:

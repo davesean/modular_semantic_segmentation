@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 
 def computePRvalues(simMat, mskMat):
-    thresholds = [0.0,0.1,0.2,0.4,0.6,0.9,0.995,1.0]
+    thresholds = [0.0,0.1,0.2,0.4,0.7,0.9,1.0]
 
     precision = np.zeros((len(thresholds),1))
     recall = np.zeros((len(thresholds),1))
@@ -50,7 +50,7 @@ def computePRvalues(simMat, mskMat):
 
 def computeIOU(simMat, mskMat):
 
-    thresholds = [0.2,0.5,0.8]
+    thresholds = [0.1,0.5,0.9]
     iou = np.zeros((len(thresholds),1))
 
     for t,thresh in enumerate(thresholds):
