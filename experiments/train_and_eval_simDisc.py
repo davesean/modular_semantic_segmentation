@@ -69,6 +69,7 @@ def predict_network(net, output_dir, paths, data_desc):
 
     segm = np.zeros((paths['rgb'].shape))
     segm_gt = np.zeros((paths['rgb'].shape))
+    mask = np.zeros((paths['rgb'].shape[0],paths['rgb'].shape[1],paths['rgb'].shape[2]))
     for i in range(paths['rgb'].shape[0]):
         img = np.expand_dims(paths['rgb'][i,:,:,:], axis=0)
         data = {'rgb': img, 'depth': tf.zeros(shape=[img.shape[0],img.shape[1],img.shape[2],1],dtype=tf.float32),
@@ -78,21 +79,14 @@ def predict_network(net, output_dir, paths, data_desc):
         outputColor = data_desc.coloured_labels(labels=output)
         outputColor = outputColor[0,:,:,:]
         segm[i,:,:,:] = outputColor[...,::-1]
+        outputColor = data_desc.coloured_labels(labels=paths['labels'][i,:,:])
+        segm_gt[i,:,:,:] = outputColor[...,::-1]
+        mask[i,:,:] = error_mask(segm[i,:,:,:], segm_gt[i,:,:,:])
 
     if 'mask' in paths:
-        # TODO this label conversion is done in wilddash already, make in uniform
-        # that its either always done in the dataset or never
-        outputColor = data_desc.coloured_labels(labels=paths['labels'][i,:,:])
-        # outputColor = outputColor[:,:,:]
-        segm_gt[i,:,:,:] = outputColor[...,::-1]
         return segm, paths['rgb'], paths['mask'], segm_gt
-    # This if branch is needed as wilddash doesn't have a mask and it is generated
-    # based off of the error of the segmentation.
     else:
-        mask = error_mask(segm, paths['labels'][i,:,:])
-        return segm, paths['rgb'], mask, paths['labels'][i,:,:]
-
-
+        return segm, paths['rgb'], mask, segm_gt
 
 ex = sc.Experiment()
 # reduce output of progress bars
@@ -148,7 +142,8 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
         dataD = get_dataset(datasetDisc['name'])
         dataD = dataD(datasetDisc['image_input_dir'],**datasetDisc)
         disc_model = get_model('simDisc')
-        modelDiff=disc_model(sess=sessD, checkpoint_dir=output_dir, data=dataD)
+        modelDiff=disc_model(sess=sessD, checkpoint_dir=output_dir,
+                             data=dataD, arch=disc_config['arch'])
         print("INFO: Begin training simDisc")
         tmp = modelDiff.train(b)
         _run.info['simDisc_predictions'] = tmp
@@ -156,26 +151,25 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
         print("INFO: Finished training simDisc")
 
 
-    benchmarks = ['valid','wilddash','posneg','measure']
+    benchmarks = ['wilddash','posneg','valid','measure']
+    data_SemSeg = data_desc(**datasetSem)
     for set in benchmarks:
         if set == "measure":
-            data = data_desc(**datasetSem)
-            dataset = data.get_measureset(tf_dataset=False)
+            dataset = data_SemSeg.get_measureset(tf_dataset=False)
         elif set == "valid":
-            data = data_desc(**datasetSem)
-            dataset = data.get_validation_set(tf_dataset=False)
+            dataset = data_SemSeg.get_validation_set(tf_dataset=False)
         else:
             data = get_dataset(set)
             head, _ = os.path.split(datasetDisc['image_input_dir'])
+            head, _ = os.path.split(head)
             data = data(os.path.join(head,set))
             dataset = data.get_validation_set(tf_dataset=False)
 
-        sem_seg_images, rgb_images, masks, _ = predict_output(net,output_dir,dataset,data)
+        sem_seg_images, rgb_images, masks, _ = predict_output(net,output_dir,dataset,data_SemSeg)
 
         with GAN_sess.as_default():
             with GAN_graph.as_default():
                 synth_images = modelGAN.transform(a,sem_seg_images)
-
 
         with sessD.as_default():
             with Disc_graph.as_default():

@@ -15,7 +15,7 @@ WILDDASH_BASEPATH = path.join(DATA_BASEPATH, 'wilddash')
 class Wilddash(DataBaseclass):
 
     _data_shape_description = {
-            'rgb': (None, None, 3), 'labels': (None, None, 3)}
+            'rgb': (None, None, 3), 'labels': (None, None)}
     _num_default_classes = 12
 
     def __init__(self, base_path=WILDDASH_BASEPATH, batchsize=1, in_memory=False, **data_config):
@@ -142,7 +142,7 @@ class Wilddash(DataBaseclass):
         validationset = get_filenames()
 
         # Intitialize Baseclass with only a validation set
-        DataBaseclass.__init__(self, None, None, None, None, validation_set=validationset)
+        DataBaseclass.__init__(self, None, None, None, labelinfo, validation_set=validationset)
 
     def _load_data(self, image_path):
         rgb_filename, labels_filename = (
@@ -153,19 +153,18 @@ class Wilddash(DataBaseclass):
         blob = {}
         blob['rgb'] = cv2.imread(rgb_filename)
         blob['labels'] = cv2.imread(labels_filename, cv2.IMREAD_ANYDEPTH)
-        # apply label mapping and then transform to rgb
+        # apply label mapping
         blob['labels'] = np.asarray(self.label_lookup, dtype='int32')[blob['labels']]
-        blob['labels'] = self.coloured_labels(labels=blob['labels'])[...,::-1]
 
         if self.config['resize']:
             blob['rgb'] = cv2.resize(blob['rgb'], (256, 256),
                                      interpolation=cv2.INTER_LINEAR)
-            for m in ['depth', 'labels']:
+            for m in ['labels']:
                 blob[m] = cv2.resize(blob[m], (256, 256),
                                      interpolation=cv2.INTER_NEAREST)
         return blob
 
-    def _get_data(self, image_path):
+    def _get_data(self, image_path, training_format=False):
         """Returns data for one given image number from the specified sequence."""
         if self.in_memory and 'TMPDIR' in environ:
             if image_path not in self.images:

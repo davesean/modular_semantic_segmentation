@@ -27,11 +27,12 @@ class DataBaseclass(DataWrapper):
         self.modalities = list(self._data_shape_description.keys())
         self.labelinfo = labelinfo
         self.print_info = info
-        try:
-            shuffle(self.trainset)
-        except KeyError:
-            print("Can't shuffle train set, if this is expected, ignore this message")
-            pass
+        if self.trainset is not None:
+            try:
+                shuffle(self.trainset)
+            except KeyError:
+                print("Can't shuffle train set, if this is expected, ignore this message")
+                pass
 
     @classmethod
     def get_data_description(cls, num_classes=None):

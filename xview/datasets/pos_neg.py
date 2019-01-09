@@ -50,10 +50,10 @@ class POSNEG(DataBaseclass):
         def get_filenames(prefix1,prefix2):
             filenames = []
             filenames.extend(
-                [{'image_path': prefix1+str(n)+'.png'}
+                [{'image_path': path.join(self.base_path,prefix1+str(n)+'.png')}
                  for n in range(1,10)])
             filenames.extend(
-                [{'image_path': prefix2+str(n)+'.png'}
+                [{'image_path': path.join(self.base_path,prefix2+str(n)+'.png')}
                  for n in range(1,10)])
             return filenames
 
@@ -85,7 +85,7 @@ class POSNEG(DataBaseclass):
         blob['labels'] = np.zeros((blob['mask'].shape[0],blob['mask'].shape[1]))
         return blob
 
-    def _get_data(self, image_path):
+    def _get_data(self, image_path, training_format=False):
         """Returns data for one given image number from the specified sequence."""
         blob = self._load_data(image_path)
         return blob

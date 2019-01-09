@@ -49,7 +49,6 @@ def computePRvalues(simMat, mskMat):
     return thresholds, precision, recall
 
 def computeIOU(simMat, mskMat):
-
     thresholds = [0.1,0.5,0.9]
     iou = np.zeros((len(thresholds),1))
 
@@ -62,6 +61,9 @@ def computeIOU(simMat, mskMat):
 
             inter = np.sum(simMask[mask.astype(bool)])
             union = np.sum(((simMask+mask) > 0).astype(int))
-            avg +=inter/union
-        iou[t] = avg/simMat.shape[0]
+            if union > 0:
+                avg +=inter/union
+            else
+                avg += 1 # TODO check about this
+        iou[t] = avg/(simMat.shape[0])
     return thresholds, iou
