@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 
 def computePRvalues(simMat, mskMat):
-    thresholds = [0.0,0.1,0.2,0.4,0.7,0.9,1.0]
+    thresholds = [0.2,0.4,0.6,0.8]
 
     precision = np.zeros((len(thresholds),1))
     recall = np.zeros((len(thresholds),1))
@@ -49,21 +49,25 @@ def computePRvalues(simMat, mskMat):
     return thresholds, precision, recall
 
 def computeIOU(simMat, mskMat):
-    thresholds = [0.1,0.5,0.9]
+    thresholds = [0.2,0.4,0.6,0.8]
     iou = np.zeros((len(thresholds),1))
+    OoD = np.zeros((len(thresholds),1))
 
     for t,thresh in enumerate(thresholds):
-        avg = 0
+        avgIOU = 0
+        avgOoD = 0
         for k in range(simMat.shape[0]):
             mask = mskMat[k,:,:]
+            avgOoD += np.sum(mask)/(mskMat.shape[1]*mskMat.shape[2])
             sim = cv2.resize(simMat[k,:,:],(mskMat.shape[1],mskMat.shape[2]),interpolation=cv2.INTER_NEAREST)
             simMask = (sim>thresh).astype(int)
 
             inter = np.sum(simMask[mask.astype(bool)])
             union = np.sum(((simMask+mask) > 0).astype(int))
             if union > 0:
-                avg +=inter/union
-            else
-                avg += 1 # TODO check about this
-        iou[t] = avg/(simMat.shape[0])
-    return thresholds, iou
+                avgIOU +=inter/union
+            else:
+                avgIOU += 1 # TODO check about this
+        iou[t] = avgIOU/(simMat.shape[0])
+        OoD[t] = avgOoD/(simMat.shape[0])
+    return thresholds, iou, OoD

@@ -99,7 +99,7 @@ def predict_output(net, output_dir, paths, data_desc, _run):
     return predict_network(net, output_dir, paths, data_desc)
 
 @ex.main
-def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN, datasetDisc, starting_weights, input_folder, _run):
+def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN, datasetDisc, starting_weights, input_folder, output_mat, _run):
     for key in gan_config:
         setattr(a, key, gan_config[key])
     for key in disc_config:
@@ -142,17 +142,27 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
         dataD = get_dataset(datasetDisc['name'])
         dataD = dataD(datasetDisc['image_input_dir'],**datasetDisc)
         disc_model = get_model('simDisc')
+
+        disc_checkpoint = None
+        if disc_config['checkpoint'] is not None:
+            disc_checkpoint = os.path.join(a.EXP_OUT,str(disc_config['checkpoint']))
         modelDiff=disc_model(sess=sessD, checkpoint_dir=output_dir,
-                             data=dataD, arch=disc_config['arch'])
-        print("INFO: Begin training simDisc")
-        tmp = modelDiff.train(b)
-        _run.info['simDisc_predictions'] = tmp
-        _run.info['simDisc_mean_predictions'] = np.mean(tmp, axis=0)
-        print("INFO: Finished training simDisc")
+                             data=dataD, arch=disc_config['arch'],
+                             checkpoint=disc_checkpoint)
+
+        if disc_config['checkpoint'] is None:
+            print("INFO: Begin training simDisc")
+            tmp = modelDiff.train(b)
+            _run.info['simDisc_predictions'] = tmp
+            _run.info['simDisc_mean_predictions'] = np.mean(tmp, axis=0)
+            print("INFO: Finished training simDisc")
+        else:
+            print("INFO: Init and loaded checpoint for simDisc")
 
 
     benchmarks = ['wilddash','posneg','valid','measure']
     data_SemSeg = data_desc(**datasetSem)
+
     for set in benchmarks:
         if set == "measure":
             dataset = data_SemSeg.get_measureset(tf_dataset=False)
@@ -177,6 +187,28 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
 
         _run.info[set+'_IOU'] = computeIOU(simMat, masks)
         _run.info[set+'_PRvals'] = computePRvalues(simMat, masks)
+
+        if output_mat and set is not 'measure':
+
+            if not os.path.exists(os.path.join(output_dir,set)):
+                os.makedirs(os.path.join(output_dir,set))
+
+            matrix_path = os.path.join(output_dir,set,"mskMat.npy")
+            np.save(matrix_path, masks)
+
+            matrix_path = os.path.join(output_dir,set,"simMat.npy")
+            np.save(matrix_path, simMat)
+
+            matrix_path = os.path.join(output_dir,set,"rgbMat.npy")
+            np.save(matrix_path, rgb_images)
+
+            matrix_path = os.path.join(output_dir,set,"synMat.npy")
+            np.save(matrix_path, synth_images)
+
+            matrix_path = os.path.join(output_dir,set,"semMat.npy")
+            np.save(matrix_path, sem_seg_images)
+
+
 
 
 

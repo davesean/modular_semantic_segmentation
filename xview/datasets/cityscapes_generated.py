@@ -121,6 +121,9 @@ class Cityscapes_generated(DataBaseclass):
         blob['neg'] = cv2.imread(image_path['neg'])
         blob['pos_segm'] = cv2.imread(image_path['pos_segm'])
         blob['neg_segm'] = cv2.imread(image_path['neg_segm'])
+        # stack = np.concatenate([blob['labels'][...,::-1], blob['pos'][...,::-1]],axis=1)
+        # img = Image.fromarray(stack, 'RGB')
+        # img.show()
 
         return blob
 
@@ -139,8 +142,8 @@ class Cityscapes_generated(DataBaseclass):
         dx_h = int(img_h/self.ppd)
         dx_w = int(img_w/self.ppd)
 
-        p_w = int(k/self.ppd)
-        p_h = k % self.ppd
+        p_h = int(k/self.ppd)
+        p_w = k % self.ppd
 
         h_c = dx_h * p_h
         w_c = dx_w * p_w
@@ -149,8 +152,14 @@ class Cityscapes_generated(DataBaseclass):
         pos_blob['rgb'] = blob['pos'][h_c:h_c+dx_h, w_c:w_c+dx_w, ...]
         pos_segm = blob['pos_segm'][h_c:h_c+dx_h, w_c:w_c+dx_w, ...]
 
-        pos_blob = augmentate(pos_blob, brightness=self.config['augmentation']['brightness'])
+        # stack = np.concatenate([ref_patch[...,::-1], pos_blob['rgb'][...,::-1]],axis=1)
+        # img = Image.fromarray(stack, 'RGB')
+        # img.show()
+        # input("Press Enter to continue...")
+        # if k==1:
+        #     assert(False)
 
+        pos_blob = augmentate(pos_blob, brightness=self.config['augmentation']['brightness'])
         tmp_blob['rgb'] = blob['neg']
         tmp_blob['neg_segm'] = blob['neg_segm']
 
@@ -173,10 +182,6 @@ class Cityscapes_generated(DataBaseclass):
                     print("Reached counter 20 in finding neg patch loop")
                 break
             counter += 1
-
-        # stack = np.concatenate([ref_patch[...,::-1], pos_blob['rgb'][...,::-1], return_blob['rgb'][...,::-1]],axis=0)
-        # img = Image.fromarray(stack, 'RGB')
-        # img.show()
 
         return_blob['labels'] = ref_patch
         return_blob['pos'] = pos_blob['rgb']

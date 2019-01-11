@@ -191,6 +191,10 @@ class DiffDiscrim(object):
             else:
                 print(" [!] Load failed...")
                 raise ValueError('Could not load checkpoint and that is needed for validation')
+
+        assign_flag_op = self.train_flag.assign(False)
+        self.sess.run(assign_flag_op)
+
         input_data, num_validation = self.data.get_validation_set()
         data_iterator = input_data.repeat(1).batch(args.batch_size).make_one_shot_iterator()
         data_handle = self.sess.run(data_iterator.string_handle())
@@ -210,6 +214,10 @@ class DiffDiscrim(object):
                 break
 
             counter += 1
+
+        assign_flag_op = self.train_flag.assign(True)
+        self.sess.run(assign_flag_op)
+
         return pred_array
 
     def predict(self, args, inputImage, ganImage, segmImage):
