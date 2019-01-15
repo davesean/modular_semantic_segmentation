@@ -22,9 +22,9 @@ def deprocess(image):
         return ((image + 1) / 2)*255
 
 class DiffDiscrim(object):
-    def __init__(self, sess, image_size=256,
+    def __init__(self, sess, image_size=256, seed=42,
                  batch_size=64, df_dim=64, ppd=8,
-                 input_c_dim=3, is_training=True, arch='arch1',
+                 input_c_dim=3, is_training=True, arch='arch1', batch_norm=False,
                  checkpoint_dir=None, data=None, momentum=0.9, checkpoint=None):
         """
         Args:
@@ -38,12 +38,16 @@ class DiffDiscrim(object):
             data: Data object, used to get the shape of data and called to return datasets.
             momentum: Parameter for momentum in batch normalization.
             checkpoint: Directory where the current checkpoint is that will be loaded
+            arch: define: which architecture should be used
+            batch_norm: Define if batch normalization should be used in conv2d
         """
         self.sess = sess
+        self.seed = seed
         self.ppd = 8
         self.is_grayscale = (input_c_dim == 1)
         self.batch_size = batch_size
         self.image_size = image_size
+        self.batch_norm = batch_norm
 
         self.input_c_dim = input_c_dim
         self.df_dim = df_dim
@@ -73,17 +77,15 @@ class DiffDiscrim(object):
         if checkpoint is not None and not(checkpoint.split('/')[-1] == "None"):
             self.load(checkpoint)
             self.checkpoint_loaded = True
-            if not is_training:
-                assign_flag_op = self.train_flag.assign(False)
-                self.sess.run(assign_flag_op)
 
     def build_model(self, target, pos, neg, pos_segm, neg_segm):
+        tf.set_random_seed(self.seed)
         self.target_placeholder = preprocess(target)
         self.pos_placeholder = preprocess(pos)
         self.neg_placeholder = preprocess(neg)
         self.pos_segm_placeholder = preprocess(pos_segm)
         self.neg_segm_placeholder = preprocess(neg_segm)
-        self.train_flag = tf.Variable(True, name="Train_flag")
+        self.train_flag = tf.placeholder(tf.bool, name="Train_flag")
 
         # PosExample = tf.concat([self.target_placeholder, self.pos_placeholder, self.pos_segm_placeholder], 3)
         # NegExample = tf.concat([self.target_placeholder, self.neg_placeholder, self.neg_segm_placeholder], 3)
@@ -94,10 +96,13 @@ class DiffDiscrim(object):
         # self.D, self.D_logits = self.discriminator(PosExample)
         # self.D_, self.D_logits_ = self.discriminator(NegExample,reuse=True)
 
-        self.D, self.D_logits = self.archDisc.get_output(image=PosExample, is_training=self.train_flag)
+        self.D, self.D_logits = self.archDisc.get_output(image=PosExample,
+                                                         is_training=self.train_flag,
+                                                         bn=self.batch_norm)
         self.D_, self.D_logits_ = self.archDisc.get_output(image=NegExample,
                                                            reuse=True,
-                                                           is_training=self.train_flag)
+                                                           is_training=self.train_flag,
+                                                           bn=self.batch_norm)
 
         self.d_loss_pos = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits, labels=tf.zeros_like(self.D)))
         self.d_loss_neg = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits_, labels=tf.ones_like(self.D_)))
@@ -150,7 +155,8 @@ class DiffDiscrim(object):
             if np.mod(globalCounter, args.num_print) == 1:
                 try:
                     _, summary_str, d_l = self.sess.run([d_optim, self.sum, self.d_loss],
-                                                   feed_dict={ self.iter_handle: data_handle })
+                                                   feed_dict={ self.iter_handle: data_handle,
+                                                               self.train_flag: True})
 
                 except tf.errors.OutOfRangeError:
                     print("INFO: Done with all steps")
@@ -163,18 +169,24 @@ class DiffDiscrim(object):
                 stdout.flush()
                 tmp = self.validation(args, out=True, loaded=True)
                 mean_val_D, mean_val_D_ = np.mean(tmp, axis=0)
+                std_D, std_D_ = np.std(tmp, axis=0)
                 absErr = mean_val_D+1-mean_val_D_
-                print("Mean Validation: Same: %f \t Diff: %f \t Abs: %f" % (mean_val_D,mean_val_D_,absErr))
+                totStd = std_D+std_D_
+                print("Mean Validation: Same: %f \t Diff: %f \t Abs: %f \t sum_Std: %f" % (mean_val_D,mean_val_D_,absErr,totStd))
 
                 abs_err = tf.Summary(value=[tf.Summary.Value(tag='Absolute Validation Error',
                                             simple_value=absErr)])
+                tot_std = tf.Summary(value=[tf.Summary.Value(tag='Sum Standard Deviations',
+                                            simple_value=totStd)])
                 self.writer.add_summary(abs_err, globalCounter)
+                self.writer.add_summary(tot_std, globalCounter)
                 stdout.flush()
                 start_time = time.time()
                 localCounter = 1
             else:
                 try:
-                    self.sess.run(d_optim,feed_dict={ self.iter_handle: data_handle })
+                    self.sess.run(d_optim,feed_dict={ self.iter_handle: data_handle,
+                                                      self.train_flag: True })
                 except tf.errors.OutOfRangeError:
                     print("INFO: Done with all training steps")
                     self.save(self.checkpoint_dir, globalCounter, args.DATA_id)
@@ -192,9 +204,6 @@ class DiffDiscrim(object):
                 print(" [!] Load failed...")
                 raise ValueError('Could not load checkpoint and that is needed for validation')
 
-        assign_flag_op = self.train_flag.assign(False)
-        self.sess.run(assign_flag_op)
-
         input_data, num_validation = self.data.get_validation_set()
         data_iterator = input_data.repeat(1).batch(args.batch_size).make_one_shot_iterator()
         data_handle = self.sess.run(data_iterator.string_handle())
@@ -204,7 +213,8 @@ class DiffDiscrim(object):
         while(True):
             try:
                 D, D_ = self.sess.run([self.D, self.D_],
-                                               feed_dict={ self.iter_handle: data_handle })
+                                               feed_dict={ self.iter_handle: data_handle,
+                                                           self.train_flag: False })
 
                 pred_array[counter-1,:] = [np.mean(D),np.mean(D_)]
                 if not out:
@@ -214,9 +224,6 @@ class DiffDiscrim(object):
                 break
 
             counter += 1
-
-        assign_flag_op = self.train_flag.assign(True)
-        self.sess.run(assign_flag_op)
 
         return pred_array
 
@@ -262,7 +269,8 @@ class DiffDiscrim(object):
                        .batch(self.ppd*self.ppd).make_one_shot_iterator()
             handle = self.sess.run(iterator.string_handle())
 
-            output = self.sess.run(self.D, feed_dict={self.iter_handle: handle})
+            output = self.sess.run(self.D, feed_dict={self.iter_handle: handle,
+                                                      self.train_flag: False })
             output = output[:,0,0,0].reshape((self.ppd,self.ppd))
             pred_array[k,:] = [k+1, np.mean(output)]
 
@@ -294,9 +302,6 @@ class DiffDiscrim(object):
         if not self.checkpoint_loaded:
             assert(False, "No checkpoint loaded, load one at init of model.")
 
-        assign_flag_op = self.train_flag.assign(False)
-        self.sess.run(assign_flag_op)
-
         for k in range(realImages.shape[0]):
             input = np.expand_dims(realImages[k,:,:,:],axis=0)
             synth = np.expand_dims(synthImages[k,:,:,:],axis=0)
@@ -323,7 +328,8 @@ class DiffDiscrim(object):
                        .batch(self.ppd*self.ppd).make_one_shot_iterator()
             handle = self.sess.run(iterator.string_handle())
 
-            output = self.sess.run(self.D, feed_dict={self.iter_handle: handle})
+            output = self.sess.run(self.D, feed_dict={self.iter_handle: handle,
+                                                      self.train_flag: True })
             output = output[:,0,0,0].reshape((self.ppd,self.ppd))
 
             if counter == 1:

@@ -62,7 +62,8 @@ def computeIOU(simMat, mskMat):
             sim = cv2.resize(simMat[k,:,:],(mskMat.shape[1],mskMat.shape[2]),interpolation=cv2.INTER_NEAREST)
             simMask = (sim>thresh).astype(int)
 
-            inter = np.sum(simMask[mask.astype(bool)])
+            # inter = np.sum(simMask[mask.astype(bool)])
+            inter = np.sum(mask[simMask.astype(bool)])
             union = np.sum(((simMask+mask) > 0).astype(int))
             if union > 0:
                 avgIOU +=inter/union

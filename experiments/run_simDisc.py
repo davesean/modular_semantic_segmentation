@@ -77,7 +77,7 @@ def main(dataset, net_config, _run):
                      batch_size=a.batch_size, df_dim=a.ndf,
                      input_c_dim=3,
                      checkpoint_dir=output_dir, data=data,
-                     momentum=a.batch_momentum,
+                     momentum=a.batch_momentum, arch=net_config['arch'],
                      checkpoint=os.path.join(a.EXP_OUT,str(net_config['checkpoint'])))
         if a.mode == "train":
             tmp = model.train(a)

@@ -109,7 +109,8 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
     setattr(b,'EXP_OUT',EXP_OUT)
     setattr(b,'RUN_id',_run._id)
     data_id=datasetDisc['image_input_dir'].split('/')[-1].split('_')[0]
-    setattr(b,'DATA_id',data_id)    # Set up the directories for diagnostics
+    setattr(b,'DATA_id',data_id)
+    # Set up the directories for diagnostics
     output_dir = create_directories(_run._id, ex)
 
     # load the data for the data description
@@ -155,6 +156,7 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
             tmp = modelDiff.train(b)
             _run.info['simDisc_predictions'] = tmp
             _run.info['simDisc_mean_predictions'] = np.mean(tmp, axis=0)
+            _run.info['simDisc_stdDev'] = np.std(tmp, axis=0)
             print("INFO: Finished training simDisc")
         else:
             print("INFO: Init and loaded checpoint for simDisc")
@@ -175,7 +177,7 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
             data = data(os.path.join(head,set))
             dataset = data.get_validation_set(tf_dataset=False)
 
-        sem_seg_images, rgb_images, masks, _ = predict_output(net,output_dir,dataset,data_SemSeg)
+        sem_seg_images, rgb_images, masks, gt_seg_images = predict_output(net,output_dir,dataset,data_SemSeg)
 
         with GAN_sess.as_default():
             with GAN_graph.as_default():
@@ -208,7 +210,8 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
             matrix_path = os.path.join(output_dir,set,"semMat.npy")
             np.save(matrix_path, sem_seg_images)
 
-
+            matrix_path = os.path.join(output_dir,set,"gtsMat.npy")
+            np.save(matrix_path, gt_seg_images)
 
 
 
