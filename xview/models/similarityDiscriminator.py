@@ -16,10 +16,10 @@ def preprocess(image):
     with tf.name_scope("preprocess"):
         # [0, 255] => [-1, 1]
         return image/255 * 2 - 1
-def deprocess(image):
-    with tf.name_scope("deprocess"):
-        # [-1, 1] => [0, 255]
-        return ((image + 1) / 2)*255
+# def deprocess(image):
+#     with tf.name_scope("deprocess"):
+#         # [-1, 1] => [0, 255]
+#         return ((image + 1) / 2)*255
 
 class DiffDiscrim(object):
     def __init__(self, sess, image_size=256, seed=42,
@@ -330,7 +330,9 @@ class DiffDiscrim(object):
 
             output = self.sess.run(self.D, feed_dict={self.iter_handle: handle,
                                                       self.train_flag: True })
-            output = output[:,0,0,0].reshape((self.ppd,self.ppd))
+            if k==0:
+                print(output.shape)
+            output = np.squeeze(output).reshape((self.ppd,self.ppd))
 
             if counter == 1:
                 output_matrix = np.expand_dims(output, axis=0)

@@ -34,8 +34,8 @@ def maxPool2d(input_,
            k_h=4, k_w=4, d_h=2, d_w=2,
            name="maxpool2d",pad="SAME"):
            return tf.layers.max_pooling2d(inputs=input_, pool_size=[k_h,k_w], strides=[d_h,d_w], padding=pad)
-def dense(input_, output_size, num_channels, name="dense", reuse=False, stddev=0.02, bias_start=0.0):
-    shape = 16 * 16 * num_channels
+def dense(input_, output_size, input_size, num_channels, name="dense", reuse=False, stddev=0.02, bias_start=0.0):
+    shape = input_size * input_size * num_channels
     with tf.variable_scope(name):
         matrix = tf.get_variable("Matrix", [shape, output_size], tf.float32,
                                  tf.random_normal_initializer(stddev=stddev))
@@ -112,16 +112,21 @@ class simArch(object):
     #         return tf.nn.sigmoid(h5), h5
 
     def arch3(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
-        # image is 256 x 256 x (input_c_dim + input_c_dim)
         with tf.variable_scope(var_scope) as scope:
             if reuse:
                 tf.get_variable_scope().reuse_variables()
             else:
                 assert tf.get_variable_scope().reuse == False
             h0 = lrelu(conv2d(image, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv'))
-            h1 = conv2d(h0, 1, k_h=8, k_w=8, d_h=1, d_w=1, name='s_h1_conv')
+            h1 = lrelu(conv2d(image, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv'))
+            pool1 = max_pooling2d(h1, [2, 2], [2, 2], name='s_pool1')
+            h2 = lrelu(conv2d(image, 128, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h2_conv'))
+            h3 = lrelu(conv2d(image, 128, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h3_conv'))
+            pool1 = max_pooling2d(h3, [2, 2], [2, 2], name='s_pool1')
+            h4 = lrelu(conv2d(h0, 256, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h4_conv'))
+            h5 = conv2d(h1, 1, k_h=8, k_w=8, d_h=1, d_w=1, name='s_h5_conv')
 
-            return tf.nn.sigmoid(h1), h1
+            return tf.nn.sigmoid(h5), h5
 
     archs['arch3'] = arch3
 
@@ -144,6 +149,31 @@ class simArch(object):
 
     archs['arch4'] = arch4
 
+    def arch5(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
+        with tf.variable_scope(var_scope) as scope:
+            if reuse:
+                tf.get_variable_scope().reuse_variables()
+            else:
+                assert tf.get_variable_scope().reuse == False
+            image = (image+1)/2
+
+            h0 = lrelu(conv2d(image, 96, k_h=7, k_w=7, d_h=3, d_w=3, name='s_h0_conv'))
+            pool1 = max_pooling2d(h0, [2, 2], [2, 2], name='s_pool1', padding='same')
+            h1 = lrelu(conv2d(pool1, 192, k_h=5, k_w=5, d_h=1, d_w=1, name='s_h1_conv'))
+            pool2 = max_pooling2d(h1, [2, 2], [2, 2], name='s_pool2', padding='same')
+            h2 = lrelu(conv2d(pool2, 256, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h2_conv'))
+
+            flat = tf.layers.flatten(h2,name='s_flatten')
+            # out = tf.layers.dense(inputs=flat, units=1, activation=lrelu,
+            #                       reuse=reuse,name='s_dense_out')
+
+            out = dense(flat, input_size=3, output_size=1, num_channels=256,
+                        reuse=reuse, name='s_dense_out')
+            return tf.nn.sigmoid(out), out
+
+    archs['arch5'] = arch5
+
+
 
     def __init__(self, df_dim=64, batch_momentum=0.9, arch='arch1', archs=archs):
         """
@@ -155,9 +185,6 @@ class simArch(object):
         self.df_dim = df_dim
         self.batch_momentum = batch_momentum
         self.arch = arch
-        # self.s_bn1 = batch_norm(name='s_bn1', momentum=batch_momentum)
-        # self.s_bn2 = batch_norm(name='s_bn2', momentum=batch_momentum)
-        # self.d_bn3 = batch_norm(name='s_bn3', momentum=batch_momentum)
         self.archs = archs
 
 

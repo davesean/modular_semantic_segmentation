@@ -15,15 +15,22 @@ def computePRvalues(simMat, mskMat):
         false_pos_counter = 0
         false_neg_counter = 0
         for k in range(simMat.shape[0]):
-            mask = mskMat[k,:,:]
+            mask_gt = mskMat[k,:,:]
+            mask_sim = simMat[k,:,:]
+
+            if np.sum(mask_gt) == 0:
+                mask_gt = (~mask_gt.astype(bool)).astype(int)
+                mask_sim = 1-mask_sim
+                thresholds.reverse()
+
             for j in range(ppd):
                 for i in range(ppd):
-                        input_patch = mask[j*dx:(j+1)*dx,i*dx:(i+1)*dx]
-                        if (np.sum(input_patch)/input_patch.size > 0.5):
+                        patch_gt = mask_gt[j*dx:(j+1)*dx,i*dx:(i+1)*dx]
+                        if (np.sum(patch_gt)/patch_gt.size > 0.5):
                             true_label = 1
                         else:
                             true_label = 0
-                        if  simMat[k,j,i] < thresh:
+                        if  mask_sim[j,i] < thresh:
                             class_label = 0
                         else:
                             class_label = 1
@@ -57,14 +64,20 @@ def computeIOU(simMat, mskMat):
         avgIOU = 0
         avgOoD = 0
         for k in range(simMat.shape[0]):
-            mask = mskMat[k,:,:]
-            avgOoD += np.sum(mask)/(mskMat.shape[1]*mskMat.shape[2])
-            sim = cv2.resize(simMat[k,:,:],(mskMat.shape[1],mskMat.shape[2]),interpolation=cv2.INTER_NEAREST)
+            mask_gt = mskMat[k,:,:]
+            mask_sim = simMat[k,:,:]
+            if np.sum(mask_gt) == 0:
+                mask_gt = (~mask_gt.astype(bool)).astype(int)
+                mask_sim = 1-mask_sim
+                thresholds.reverse()
+
+            avgOoD += np.sum(mask_gt)/(mskMat.shape[1]*mskMat.shape[2])
+            sim = cv2.resize(mask_sim,(mskMat.shape[1],mskMat.shape[2]),interpolation=cv2.INTER_NEAREST)
             simMask = (sim>thresh).astype(int)
 
-            # inter = np.sum(simMask[mask.astype(bool)])
-            inter = np.sum(mask[simMask.astype(bool)])
-            union = np.sum(((simMask+mask) > 0).astype(int))
+            # inter = np.sum(simMask[mask_gt.astype(bool)])
+            inter = np.sum(mask_gt[simMask.astype(bool)])
+            union = np.sum(((simMask+mask_gt) > 0).astype(int))
             if union > 0:
                 avgIOU +=inter/union
             else:

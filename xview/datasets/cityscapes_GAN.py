@@ -200,8 +200,6 @@ class Cityscapes_GAN(DataBaseclass):
                                  interpolation=cv2.INTER_LINEAR)
         blob['labels'] = cv2.resize(blob['labels'], (256, 256),
                                  interpolation=cv2.INTER_NEAREST)
-            # blob = augmentate(blob, crop=self.config['augmentation']['crop'])
-
         return blob
 
     def get_ego_vehicle_mask(self, image_name, image_path):

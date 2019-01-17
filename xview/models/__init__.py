@@ -6,6 +6,7 @@ from .variance_mix import VarianceFusion
 from .adapnet import Adapnet
 from .fusion_fcn import FusionFCN
 from .cGAN import pix2pix
+from .cycleGAN import cycleGAN
 from .similarityDiscriminator import DiffDiscrim
 
 
@@ -26,6 +27,8 @@ def get_model(name):
         return Adapnet
     elif name == 'cGAN':
         return pix2pix
+    elif name == 'cycleGAN':
+        return cycleGAN
     elif name == 'simDisc':
         return DiffDiscrim
     else:

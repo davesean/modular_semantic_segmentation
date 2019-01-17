@@ -173,7 +173,9 @@ class pix2pix(object):
             self.fake_B_sum, self.d_loss_fake_sum, self.g_loss_sum, self.d_sum, self.d_loss_real_sum, self.d_loss_sum])
         self.writer = tf.summary.FileWriter(self.checkpoint_dir, self.sess.graph)
 
-        if not self.checkpoint_loaded and args.checkpoint is not None and self.load(os.path.join(args.EXP_OUT,str(args.checkpoint))):
+        if self.checkpoint_loaded:
+            print(" [*] Already loaded")
+        elif args.checkpoint is not None and self.load(os.path.join(args.EXP_OUT,str(args.checkpoint))):
             print(" [*] Load SUCCESS")
         else:
             print(" [!] Load failed...")
