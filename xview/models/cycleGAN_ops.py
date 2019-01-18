@@ -181,7 +181,7 @@ def residual_block(x, n_channels=128, normalizer_fn=instance_norm,
                 activation_fn=activation_fn,
                 scope='1',
                 reuse=reuse)
-        h = tf.pad(x, [[0, 0], [1, 1], [1, 1], [0, 0]], "REFLECT")
+        h = tf.pad(h, [[0, 0], [1, 1], [1, 1], [0, 0]], "REFLECT")
         h = tfl.conv2d(
                 inputs=h,
                 num_outputs=n_channels,
