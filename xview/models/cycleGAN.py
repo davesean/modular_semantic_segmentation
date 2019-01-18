@@ -6,10 +6,8 @@ from glob import glob
 import tensorflow as tf
 import numpy as np
 import cv2
-from six.moves import xrange
 import sys
 
-from xview.models.vgg16 import vgg16
 from xview.models.cycleGAN_ops import *
 
 def add_noise(image, noise=0.1):
@@ -26,12 +24,14 @@ def deprocess(image):
         return ((image + 1) / 2)*255
 
 class cycleGAN(object):
-    def __init__(self, sess, image_size=256, capacity=50, batch_size=1,
-                 dataset_name='cityscapes_GAN',
+    def __init__(self, sess, image_size=256, batch_size=1, reconst_coeff=10,
+                 dataset_name='cityscapes_GAN', z_dim=8, latent_coeff=0.5, kl_coeff=0.01,
                  checkpoint_dir=None, data=None, data_desc=None,
                  checkpoint=None):
         """
         https://colab.research.google.com/drive/1Enc-pKlP4Q3cimEBfcQv0B_6hUvjVL3o?sandboxMode=true#scrollTo=p7xUHe93Xq61
+        now
+        https://github.com/prakashpandey9/BicycleGAN/blob/master/model.py
         Args:
             sess: TensorFlow session
             batch_size: The size of batch. Should be specified before training.
@@ -39,6 +39,7 @@ class cycleGAN(object):
             dataset_name: Name of dataset to be loaded and trained on.
             checkpoint_dir: Path to directory where checkpoint will be saved
             checkpoint: Path to directory where a checkpoint will be loaded from
+            z_dim: size of latent vector [8]
             data: Object that delivers the datasets.
             data_desc: Received the shape of data, to build the model/graph.
         """
@@ -46,11 +47,10 @@ class cycleGAN(object):
         self.batch_size = batch_size
         self.image_size = image_size
 
-
-        # Storage for fake generations
-        self.capacity = capacity
-        self.fake_As = capacity * [np.zeros((1, self.image_size, self.image_size, 3), dtype=np.float32)]
-        self.fake_Bs = capacity * [np.zeros((1, self.image_size, self.image_size, 3), dtype=np.float32)]
+        self.Z_dim=z_dim
+        self.reconst_coeff = reconst_coeff
+        self.latent_coeff = latent_coeff
+        self.kl_coeff = kl_coeff
 
         self.data = data
         self.dataset_name = dataset_name
@@ -82,78 +82,72 @@ class cycleGAN(object):
         # SemSeg Label image
         self.real_A = preprocess(input)
 
-        self.fake_A = generator(self.real_B, scope='G_ba')
-        self.fake_B = generator(self.real_A, scope='G_ab')
+        self.z = tf.placeholder(tf.float32, [self.batch_size, self.Z_dim], name='latent_vector')
 
-        self.cycle_A = generator(self.fake_B, scope='G_ba', reuse=True)
-        self.cycle_B = generator(self.fake_A, scope='G_ab', reuse=True)
+        self.encoded_true_img, self.encoded_mu, self.encoded_log_sigma = self.Encoder(self.real_B)
+        self.desired_gen_img = self.Generator(self.real_A, self.encoded_true_img)
 
-        self.D_A_real = discriminator(self.real_A, scope='D_A')
-        self.D_B_real = discriminator(self.real_B, scope='D_B')
-        self.D_A_fake = discriminator(self.fake_A, scope='D_A', reuse=True)
-        self.D_B_fake = discriminator(self.fake_B, scope='D_B', reuse=True)
+        self.LR_desired_img = self.Generator(self.real_A, self.z)
+        self.reconst_z, self.reconst_mu, self.reconst_log_sigma = self.Encoder(self.LR_desired_img)
 
-        l1 = 10.0
-        loss_cycle = tf.reduce_mean(l1 * tf.abs(self.real_A - self.cycle_A)) + \
-                     tf.reduce_mean(l1 * tf.abs(self.real_B - self.cycle_B))
-        loss_G_ab = tf.reduce_mean(tf.square(self.D_B_fake - 1.0)) + loss_cycle
-        loss_G_ba = tf.reduce_mean(tf.square(self.D_A_fake - 1.0)) + loss_cycle
-        self.loss_G = loss_G_ab + loss_G_ba
+        self.P_real = self.Discriminator(self.real_B) # Probability of ground_truth/real image (B) as real/fake
+        self.P_fake = self.Discriminator(self.LR_desired_img) # Probability of generated output images (G(A, N(z)) as real/fake
+        self.P_fake_encoded = self.Discriminator(self.desired_gen_img) # Probability of generated output images (G(A, Q(z|B)) as real/fake
 
-        self.fake_A_sample = tf.placeholder(name='fake_A_sample',
-                shape=[None, self.image_size, self.image_size, 3], dtype=tf.float32)
-        self.fake_B_sample = tf.placeholder(name='fake_B_sample',
-                shape=[None, self.image_size, self.image_size, 3], dtype=tf.float32)
+        self.loss_vae_gan_D = (tf.reduce_mean(tf.squared_difference(self.P_real, 0.9)) + tf.reduce_mean(tf.square(self.P_fake_encoded)))
 
-        self.D_A_fake_sample = discriminator(self.fake_A_sample, scope='D_A', reuse=True)
-        self.D_B_fake_sample = discriminator(self.fake_B_sample, scope='D_B', reuse=True)
-        #TODO /2 or not?
-        self.loss_D_B = (tf.reduce_mean(tf.square(self.D_B_real - 0.9)) + \
-                    tf.reduce_mean(tf.square(self.D_B_fake_sample))) / 2
-        self.loss_D_A = (tf.reduce_mean(tf.square(self.D_A_real - 0.9)) + \
-                    tf.reduce_mean(tf.square(self.D_A_fake_sample))) / 2
+        self.loss_lr_gan_D = (tf.reduce_mean(tf.squared_difference(self.P_real, 0.9)) + tf.reduce_mean(tf.square(self.P_fake)))
 
-        self.dAr_sum = tf.summary.histogram("D_A_real", self.D_A_real)
-        self.dBr_sum = tf.summary.histogram("D_B_real", self.D_B_real)
-        self.dAf_sum = tf.summary.histogram("D_A_fake", self.D_A_fake)
-        self.dBf_sum = tf.summary.histogram("D_B_fake", self.D_B_fake)
+        self.loss_vae_gan_GE = tf.reduce_mean(tf.squared_difference(self.P_fake_encoded, 0.9)) #G
+
+        self.loss_gan_G = tf.reduce_mean(tf.squared_difference(self.P_fake, 0.9))
+
+        self.loss_vae_GE = tf.reduce_mean(tf.abs(self.real_B - self.desired_gen_img)) #G
+
+        self.loss_latent_GE = tf.reduce_mean(tf.abs(self.z - self.reconst_z)) #G
+
+        self.loss_kl_E = 0.5 * tf.reduce_mean(-1 - self.encoded_log_sigma + self.encoded_mu ** 2 + tf.exp(self.encoded_log_sigma))
+
+        self.loss_D = self.loss_vae_gan_D + self.loss_lr_gan_D - tf.reduce_mean(tf.squared_difference(self.P_real, 0.9))
+        self.loss_G = self.loss_vae_gan_GE + self.loss_gan_G + self.reconst_coeff*self.loss_vae_GE + self.latent_coeff*self.loss_latent_GE
+        self.loss_E = self.loss_vae_gan_GE + self.reconst_coeff*self.loss_vae_GE + self.latent_coeff*self.loss_latent_GE + self.kl_coeff*self.loss_kl_E
+
+        self.d_loss_sum = tf.summary.scalar("d_loss", self.loss_D)
+        self.g_loss_sum = tf.summary.scalar("g_loss", self.loss_G)
+        self.e_loss_sum = tf.summary.scalar("e_loss", self.loss_E)
+
+        self.Pr_sum = tf.summary.histogram("P_real", self.P_real)
+        self.Pf_sum = tf.summary.histogram("P_fake", self.P_fake)
+        self.Pfe_sum = tf.summary.histogram("P_fake_encoded", self.P_fake_encoded)
 
         self.real_A_sum = tf.summary.image("Input", deprocess(self.real_A)[...,::-1])
         self.real_B_sum = tf.summary.image("Target", deprocess(self.real_B)[...,::-1])
-        self.fake_A_sum = tf.summary.image("Fake_Input", deprocess(self.fake_A)[...,::-1])
-        self.fake_B_sum = tf.summary.image("Fake_Target", deprocess(self.fake_B)[...,::-1])
-        self.cycle_A_sum = tf.summary.image("Cycle_Input", deprocess(self.cycle_A)[...,::-1])
-        self.cycle_B_sum = tf.summary.image("Cycle_Target", deprocess(self.cycle_B)[...,::-1])
-
-        self.d_A_loss_sum = tf.summary.scalar("d_A_loss", self.loss_D_A)
-        self.d_B_loss_sum = tf.summary.scalar("d_B_loss", self.loss_D_B)
-        self.g_loss_sum = tf.summary.scalar("g_loss", self.loss_G)
-
-
-        t_vars = tf.trainable_variables()
-
-        self.D_A_vars = [var for var in t_vars if var.name.startswith('D_A')]
-        self.D_B_vars = [var for var in t_vars if var.name.startswith('D_B')]
-        G_ab_vars = [var for var in t_vars if var.name.startswith('G_ab')]
-        G_ba_vars = [var for var in t_vars if var.name.startswith('G_ba')]
-        self.G_vars = G_ab_vars + G_ba_vars
+        self.Des_sum = tf.summary.image("Desired_Target", deprocess(self.desired_gen_img)[...,::-1])
+        self.Gen_sum = tf.summary.image("Generated_Image", deprocess(self.LR_desired_img)[...,::-1])
 
         self.saver = tf.train.Saver()
 
     def train(self, args):
         """Train cycleGAN"""
-        #TODO check if these two lines are needed/improve results
-        # update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-        # with tf.control_dependencies(update_ops):
 
-        d_A_optim = tf.train.AdamOptimizer(args.lr,args.beta1).minimize(
-                self.loss_D_A, var_list=self.D_A_vars)
-        d_B_optim = tf.train.AdamOptimizer(args.lr,args.beta1).minimize(
-                self.loss_D_B, var_list=self.D_B_vars)
-        g_optim = tf.train.AdamOptimizer(args.lr,args.beta1).minimize(
-                self.loss_G, var_list=self.G_vars)
+        # Optimizer
+        self.dis_var = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Discriminator")
+        self.gen_var= tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Generator")
+        self.enc_var = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="Encoder")
+        opt = tf.train.AdamOptimizer(args.lr, beta1=0.5)
 
-        train_op = tf.group(g_optim, d_B_optim, d_A_optim)
+
+
+        with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+            self.D_solver = opt.minimize(self.loss_D, var_list = self.dis_var)
+
+        with tf.control_dependencies([self.D_solver]):
+            self.G_solver = opt.minimize(self.loss_G, var_list = self.gen_var)
+
+        with tf.control_dependencies([self.G_solver]):
+            self.E_solver = opt.minimize(self.loss_E, var_list = self.enc_var)
+
+
         init_op = tf.group(tf.global_variables_initializer(),
                    tf.local_variables_initializer())
         self.sess.run(init_op)
@@ -163,11 +157,9 @@ class cycleGAN(object):
         else:
             print(" [!] Load failed...")
 
-
-
-        self.sum = tf.summary.merge([self.dAr_sum,self.dBr_sum,self.dAf_sum,self.dBf_sum,self.real_A_sum,
-                                     self.real_B_sum,self.fake_A_sum, self.fake_B_sum,self.cycle_A_sum,self.cycle_B_sum,
-                                     self.d_A_loss_sum, self.d_B_loss_sum, self.g_loss_sum])
+        self.sum = tf.summary.merge([self.d_loss_sum,self.g_loss_sum,self.e_loss_sum,
+                                     self.Pr_sum,self.Pf_sum,self.Pfe_sum,
+                                     self.real_A_sum, self.real_B_sum, self.Des_sum, self.Gen_sum])
 
         self.writer = tf.summary.FileWriter(self.checkpoint_dir, self.sess.graph)
 
@@ -180,47 +172,26 @@ class cycleGAN(object):
         start_time = time.time()
 
         while True:
+            batch_z = np.random.normal(size=(self.batch_size, self.Z_dim))
             try:
-                if train_step == 0:
-                    A_fake, B_fake = self.sess.run([self.fake_A,self.fake_B],
-                                              feed_dict={ self.iter_handle: data_handle })
-
-                if train_step < self.capacity:
-                    self.fake_As[idx] = A_fake
-                    self.fake_Bs[idx] = B_fake
-                    idx = (idx+1)%self.capacity
-                elif np.random.random() > 0.5:
-                    rand_idx = np.random.randint(0,self.capacity)
-                    self.fake_As[rand_idx], A_fake = A_fake, self.fake_As[rand_idx]
-                    self.fake_Bs[rand_idx], B_fake = B_fake, self.fake_Bs[rand_idx]
+                if train_step % args.num_print == 0:
+                    summary, _, loss_d, loss_g, loss_e   = self.sess.run([self.sum, self.E_solver,self.loss_D, self.loss_G, self.loss_E],
+                                                          feed_dict={ self.iter_handle: data_handle,
+                                                                      self.z: batch_z})
+                    self.writer.add_summary(summary, train_step)
+                    print("Step: [%2d] rate: %4.4f steps/sec, d_loss: %.8f, g_loss: %.8f, e_loss: %.8f" \
+                        % (train_step,(train_step+1)/(time.time() - start_time),loss_d,loss_g,loss_e))
+                    stdout.flush()
                 else:
-                    pass
-
-                _, dAl, dBl, gl, A_fake_new, B_fake_new  = self.sess.run([train_op,self.loss_D_A,self.loss_D_B,self.loss_G, self.fake_A,self.fake_B],
-                                                      feed_dict={ self.iter_handle: data_handle,
-                                                                self.fake_A_sample: A_fake,
-                                                                self.fake_B_sample: B_fake})
+                    _ = self.sess.run(self.E_solver,
+                                      feed_dict={ self.iter_handle: data_handle,
+                                                  self.z: batch_z})
 
             except tf.errors.OutOfRangeError:
                 print("INFO: Done with all steps")
                 self.save(self.checkpoint_dir, train_step)
                 break
 
-            if train_step % args.num_print == 0:
-                print("Step: [%2d] rate: %4.4f steps/sec, dA_loss: %.8f, dB_loss: %.8f, g_loss: %.8f" \
-                    % (train_step,args.num_print/(time.time() - start_time),dAl,dBl,gl))
-                stdout.flush()
-
-                summary = self.sess.run(self.sum,
-                                  feed_dict={ self.iter_handle: data_handle,
-                                            self.fake_A_sample: A_fake,
-                                            self.fake_B_sample: B_fake})
-
-                self.writer.add_summary(summary, train_step)
-                start_time = time.time()
-
-            A_fake = A_fake_new
-            B_fake = B_fake_new
             train_step += 1
 
     def validate(self, args):
@@ -338,11 +309,8 @@ class cycleGAN(object):
                 cv2.imwrite(os.path.join(local_folder,filename), deprocess(target[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
                 counter +=1
 
-
     def save(self, checkpoint_dir, step):
-        model_name = "cycleGAN.model"
-        # model_dir = "%s_%s" % (self.dataset_name, self.batch_size)
-        # checkpoint_dir = os.path.join(self.checkpoint_dir, model_dir)
+        model_name = "bicycleGAN.model"
 
         self.saver.save(self.sess,
                         os.path.join(self.checkpoint_dir, model_name),
@@ -352,7 +320,93 @@ class cycleGAN(object):
         print(" [*] Reading checkpoint...")
         self.saver.restore(self.sess, tf.train.latest_checkpoint(checkpoint_dir))
         self.graph = tf.get_default_graph()
-        # uninitialized_vars = [var for var in (self.D_A_vars + self.D_B_vars + self.G_vars) if not self.sess.run(tf.is_variable_initialized(var))]
-        # self.sess.run(tf.variables_initializer(var_list=uninitialized_vars))
 
         return True
+
+    def Discriminator(self, x, is_training=True, reuse=True):
+        with tf.variable_scope("Discriminator", reuse=tf.AUTO_REUSE):
+            x = lrelu_layer(conv2d_layer(x, 64, 4, 4, 2, 2, name='d_conv1'))
+            x = lrelu_layer(bn_layer(conv2d_layer(x, 128, 4, 4, 2, 2, name='d_conv2'), is_training=is_training, scope='d_bn2'))
+            x = lrelu_layer(bn_layer(conv2d_layer(x, 256, 4, 4, 2, 2, name='d_conv3'), is_training=is_training, scope='d_bn3'))
+            x = lrelu_layer(bn_layer(conv2d_layer(x, 512, 4, 4, 2, 2, name='d_conv4'), is_training=is_training, scope='d_bn4'))
+            x = lrelu_layer(bn_layer(conv2d_layer(x, 512, 4, 4, 2, 2, name='d_conv5'), is_training=is_training, scope='d_bn5'))
+            x = lrelu_layer(bn_layer(conv2d_layer(x, 512, 4, 4, 2, 2, name='d_conv6'), is_training=is_training, scope='d_bn6'))
+            x = conv2d_layer(x, 1, 4, 4, 1, 1, name='d_conv7')
+            x = tf.reshape(x, [self.batch_size, -1]) # Can use tf.reduce_mean(x, axis=[1, 2, 3])
+            x = linear_layer(x, 1, 16, scope='d_fc8')
+            x = tf.nn.sigmoid(x)
+
+        return x
+
+    def Generator(self, x, z, is_training=True, reuse=True):
+        with tf.variable_scope("Generator", reuse=tf.AUTO_REUSE):
+            conv_layer = []
+            z = tf.reshape(z, [self.batch_size, 1, 1, self.Z_dim])
+            z = tf.tile(z, [1, self.image_size, self.image_size, 1])
+            x = tf.concat([x, z], axis=3)
+            x = lrelu_layer(conv2d_layer(x, 64, 4, 4, 2, 2, name='g_conv1'))
+            conv_layer.append(x)
+            x = lrelu_layer(bn_layer(conv2d_layer(x, 128, 4, 4, 2, 2, name='g_conv2'), is_training=is_training, scope='g_bn2'))
+            conv_layer.append(x)
+            x = lrelu_layer(bn_layer(conv2d_layer(x, 256, 4, 4, 2, 2, name='g_conv3'), is_training=is_training, scope='g_bn3'))
+            conv_layer.append(x)
+            x = lrelu_layer(bn_layer(conv2d_layer(x, 512, 4, 4, 2, 2, name='g_conv4'), is_training=is_training, scope='g_bn4'))
+            conv_layer.append(x)
+            x = lrelu_layer(bn_layer(conv2d_layer(x, 512, 4, 4, 2, 2, name='g_conv5'), is_training=is_training, scope='g_bn5'))
+            conv_layer.append(x)
+            x = lrelu_layer(bn_layer(conv2d_layer(x, 512, 4, 4, 2, 2, name='g_conv6'), is_training=is_training, scope='g_bn6'))
+            conv_layer.append(x)
+            x = lrelu_layer(bn_layer(conv2d_layer(x, 512, 4, 4, 2, 2, name='g_conv7'), is_training=is_training, scope='g_bn7'))
+            conv_layer.append(x)
+            x = lrelu_layer(bn_layer(conv2d_layer(x, 512, 4, 4, 2, 2, name='g_conv8'), is_training=is_training, scope='g_bn8'))
+
+
+            x = lrelu_layer(bn_layer(deconv2d_layer(x, 512, 4, 4, 2, 2, name='g_dconv1'), is_training=is_training, scope='gd_bn1'))
+            x = tf.concat([x, conv_layer.pop()], axis=3)
+            x = lrelu_layer(bn_layer(deconv2d_layer(x, 512, 4, 4, 2, 2, name='g_dconv2'), is_training=is_training, scope='gd_bn2'))
+            x = tf.concat([x, conv_layer.pop()], axis=3)
+            x = lrelu_layer(bn_layer(deconv2d_layer(x, 512, 4, 4, 2, 2, name='g_dconv3'), is_training=is_training, scope='gd_bn3'))
+            x = tf.concat([x, conv_layer.pop()], axis=3)
+            x = lrelu_layer(bn_layer(deconv2d_layer(x, 512, 4, 4, 2, 2, name='g_dconv4'), is_training=is_training, scope='gd_bn4'))
+            x = tf.concat([x, conv_layer.pop()], axis=3)
+            x = lrelu_layer(bn_layer(deconv2d_layer(x, 256, 4, 4, 2, 2, name='g_dconv5'), is_training=is_training, scope='gd_bn5'))
+            x = tf.concat([x, conv_layer.pop()], axis=3)
+            x = lrelu_layer(bn_layer(deconv2d_layer(x, 128, 4, 4, 2, 2, name='g_dconv6'), is_training=is_training, scope='gd_bn6'))
+            x = tf.concat([x, conv_layer.pop()], axis=3)
+            x = lrelu_layer(bn_layer(deconv2d_layer(x, 64, 4, 4, 2, 2, name='g_dconv7'), is_training=is_training, scope='gd_bn7'))
+            x = tf.concat([x, conv_layer.pop()], axis=3)
+            x = lrelu_layer(bn_layer(deconv2d_layer(x, 3, 4, 4, 2, 2, name='g_dconv8'), is_training=is_training, scope='gd_bn8'))
+            x = tf.tanh(x)
+
+        return x
+
+    def Encoder(self, x, is_training=True, reuse=True):
+        with tf.variable_scope("Encoder", reuse=tf.AUTO_REUSE):
+            x = lrelu_layer(conv2d_layer(x, 64, 4, 4, 2, 2, name='e_conv1'))
+
+            x = residual_block(x, 128, 3, is_training=is_training, name='res_1')
+            x = tf.contrib.layers.avg_pool2d(x, 2, 2, padding='SAME')
+
+            x = residual_block(x, 256, 3, is_training=is_training, name='res_2')
+            x = tf.contrib.layers.avg_pool2d(x, 2, 2, padding='SAME')
+
+            x = residual_block(x, 512, 3, is_training=is_training, name='res_3')
+            x = tf.contrib.layers.avg_pool2d(x, 2, 2, padding='SAME')
+
+            x = residual_block(x, 512, 3, is_training=is_training, name='res_4')
+            x = tf.contrib.layers.avg_pool2d(x, 2, 2, padding='SAME')
+
+            x = residual_block(x, 512, 3, is_training=is_training, name='res_5')
+            x = tf.contrib.layers.avg_pool2d(x, 2, 2, padding='SAME')
+
+            x = tf.contrib.layers.avg_pool2d(x, 8, 8, padding='SAME')
+            # x = tf.reshape(x, [-1, np.prod(x.get_shape().as_list()[1:])]) # Flattening
+            x = tf.contrib.layers.flatten(x)
+
+            mu = linear_layer(x, self.Z_dim, 512,scope='e_fc1')
+
+            log_sigma = linear_layer(x, self.Z_dim, 512,scope='e_fc2')
+
+            z = mu + tf.random_normal(shape=tf.shape(self.Z_dim)) * tf.exp(log_sigma)
+
+        return z, mu, log_sigma
