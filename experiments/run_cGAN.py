@@ -99,7 +99,7 @@ def main(dataset, net_config, _run):
                         checkpoint_dir=output_dir, data=data,
                         data_desc=data.get_data_description(), momentum=a.batch_momentum,
                         L1_lambda=int(a.l1_weight/a.gan_weight), gf_dim=a.ngf,
-                        df_dim=a.ndf,label_smoothing=a.label_smoothing,
+                        df_dim=a.ndf,
                         noise_std_dev=a.noise_std_dev,
                         checkpoint=ckp)
 

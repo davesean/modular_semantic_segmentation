@@ -98,7 +98,7 @@ def linear(input_, output_size, scope=None, stddev=0.02, bias_start=0.0, with_w=
         else:
             return tf.matmul(input_, matrix) + bias
 
-def instance_norm(x, epsilon=1e-5):
+def instance_norm(x, epsilon=1e-5, scope='instance_norm'):
     """Instance Normalization.
     See Ulyanov, D., Vedaldi, A., & Lempitsky, V. (2016).
     Instance Normalization: The Missing Ingredient for Fast Stylization,
@@ -114,7 +114,7 @@ def instance_norm(x, epsilon=1e-5):
     TYPE
         Description
     """
-    with tf.variable_scope('instance_norm'):
+    with tf.variable_scope(scope):
         mean, var = tf.nn.moments(x, [1, 2], keep_dims=True)
         scale = tf.get_variable(
             name='scale',
