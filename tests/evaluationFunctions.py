@@ -1,5 +1,6 @@
 import numpy as np
 import cv2
+from skimage.measure import compare_ssim as ssim
 
 def computePRvalues(simMat, mskMat):
     thresholds = [0.2,0.4,0.6,0.8]
@@ -85,3 +86,23 @@ def computeIOU(simMat, mskMat):
         iou[t] = avgIOU/(simMat.shape[0])
         OoD[t] = avgOoD/(simMat.shape[0])
     return thresholds, iou, OoD
+
+def computePatchSSIM(realImgs, synthImgs, k):
+    num_samples = realImgs.shape[0]
+    h = realImgs.shape[1]
+    w = realImgs.shape[2]
+    num_y = int(h/k)
+    num_x = int(w/k)
+    ssimMat = np.zeros((num_samples,num_y,num_x))
+
+    for i in range(num_samples):
+        max_synth = np.max(synthImgs[i,:,:,:])
+        min_synth = np.min(synthImgs[i,:,:,:])
+        for y in range(num_y):
+            for x in range(num_x):
+                real_patch = realImgs[i,y*h:(y+1)*h,x*w:(x+1)*w,:]
+                synth_patch = synthImgs[i,y*h:(y+1)*h,x*w:(x+1)*w,:]
+
+                ssimMat[i,y,x] = ssim(real_patch,synth_patch,data_range=(max_synth-min_synth))
+
+    return ssimMat

@@ -18,10 +18,10 @@ CITIES = ['aachen', 'bremen', 'darmstadt', 'erfurt', 'hanover', 'krefeld', 'stra
           'monchengladbach', 'stuttgart', 'ulm', 'zurich']
 
 
-class Cityscapes_GAN(DataBaseclass):
+class Cityscapes_cascGAN(DataBaseclass):
 
     _data_shape_description = {
-            'rgb': (None, None, 3), 'labels': (None, None,3)}
+            'rgb': (None, None, 3), 'labels': (None, None, 12)}
     _num_default_classes = 12
 
     def __init__(self, base_path=CITYSCAPES_BASEPATH, batchsize=1, in_memory=False,
@@ -45,6 +45,7 @@ class Cityscapes_GAN(DataBaseclass):
         self.config = config
         self.img_h=img_h
         self.img_w=img_w
+
         print("Number of Cities: %d" % len(CITIES))
         if not path.exists(base_path):
             message = 'ERROR: Path to CITYSCAPES dataset does not exist.'
@@ -172,14 +173,14 @@ class Cityscapes_GAN(DataBaseclass):
         #blob['depth'] = cv2.imread(depth_filename, cv2.IMREAD_ANYDEPTH)
         # blob['labels'] = cv2.imread(labels_filename)
         blob['labels'] = cv2.imread(labels_filename, cv2.IMREAD_ANYDEPTH)
+
         # apply label mapping
         blob['labels'] = np.asarray(self.label_lookup, dtype='int32')[blob['labels']]
-        blob['labels'] = self.coloured_labels(labels=blob['labels'])[...,::-1]
 
         if self.config['resize']:
-            blob['rgb'] = cv2.resize(blob['rgb'], (int(self.img_h*1.1), int(self.img_w*1.1)),
+            blob['rgb'] = cv2.resize(blob['rgb'], (int(self.img_w*1.1), int(self.img_h*1.1)),
                                      interpolation=cv2.INTER_LINEAR)
-            blob['labels'] = cv2.resize(blob['labels'], (int(self.img_h*1.1), int(self.img_w*1.1)),
+            blob['labels'] = cv2.resize(blob['labels'], (int(self.img_w*1.1), int(self.img_h*1.1)),
                                      interpolation=cv2.INTER_NEAREST)
         return blob
 
@@ -198,10 +199,11 @@ class Cityscapes_GAN(DataBaseclass):
         if training_format:
             blob = augmentate(blob, **self.config['augmentation'])
 
-        blob['rgb'] = cv2.resize(blob['rgb'], (self.img_h, self.img_w),
+        blob['rgb'] = cv2.resize(blob['rgb'], (self.img_w, self.img_h),
                                  interpolation=cv2.INTER_LINEAR)
-        blob['labels'] = cv2.resize(blob['labels'], (self.img_h, self.img_w),
+        blob['labels'] = cv2.resize(blob['labels'], (self.img_w, self.img_h),
                                  interpolation=cv2.INTER_NEAREST)
+        blob['labels'] = (np.arange(12) == blob['labels'][...,None]).astype(int) # Make one hot for 12 classes.
         return blob
 
     def get_ego_vehicle_mask(self, image_name, image_path):

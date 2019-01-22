@@ -7,6 +7,7 @@ from .adapnet import Adapnet
 from .fusion_fcn import FusionFCN
 from .cGAN import pix2pix
 from .cycleGAN import cycleGAN
+from .cascGAN import cascRef
 from .similarityDiscriminator import DiffDiscrim
 
 
@@ -27,6 +28,8 @@ def get_model(name):
         return Adapnet
     elif name == 'cGAN':
         return pix2pix
+    elif name == 'cascGAN':
+        return cascRef
     elif name == 'cycleGAN':
         return cycleGAN
     elif name == 'simDisc':

@@ -55,7 +55,7 @@ class DataBaseclass(DataWrapper):
         if num_classes is None:
             num_classes = cls._num_default_classes
         try:
-            if (data_shape_description['labels'][2]) is 3:
+            if (data_shape_description['labels'][2]) > 0:
                 return ({'labels': tf.float32, **{m: tf.float32 for m in modalities
                                                 if not m == 'labels'}},
                         data_shape_description, num_classes)

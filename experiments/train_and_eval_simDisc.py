@@ -187,8 +187,17 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
             with Disc_graph.as_default():
                 simMat = modelDiff.transform(rgb_images, synth_images, sem_seg_images)
 
+############################################################################################
+        # Perhaps need to also give number of patches per dimension.
+        simMatSSIM = computePatchSSIM(rgb_images,synth_images,datasetDisc['ppd'])
+
+############################################################################################
+
         _run.info[set+'_IOU'] = computeIOU(simMat, masks)
         _run.info[set+'_PRvals'] = computePRvalues(simMat, masks)
+
+        _run.info[set+'_SSIM_IOU'] = computeIOU(simMatSSIM, masks)
+        # _run.info[set+'_SSIM_PRvals'] = computePRvalues(simMatSSIM, masks)
 
         if output_mat and set is not 'measure':
 
@@ -200,6 +209,9 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
 
             matrix_path = os.path.join(output_dir,set,"simMat.npy")
             np.save(matrix_path, simMat)
+
+            matrix_path = os.path.join(output_dir,set,"ssmMat.npy")
+            np.save(matrix_path, simMatSSIM)
 
             matrix_path = os.path.join(output_dir,set,"rgbMat.npy")
             np.save(matrix_path, rgb_images)
