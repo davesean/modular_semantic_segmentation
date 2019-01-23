@@ -32,7 +32,7 @@ class pix2pix(object):
                  gf_dim=64, df_dim=64, L1_lambda=100,
                  input_c_dim=3, output_c_dim=3, dataset_name='cityscapes_GAN',
                  checkpoint_dir=None, data=None, data_desc=None, momentum=0.9,
-                 noise_std_dev=0.0, checkpoint=None):
+                 noise_std_dev=0.0, checkpoint=None, gen_type="Unet"):
         """
         Args:
             sess: TensorFlow session
@@ -59,6 +59,7 @@ class pix2pix(object):
 
         self.gf_dim = gf_dim
         self.df_dim = df_dim
+        self.gen_type = gen_type
 
         self.input_c_dim = input_c_dim
         self.output_c_dim = output_c_dim
@@ -106,15 +107,19 @@ class pix2pix(object):
 
         self.build_model(training_batch['labels'], training_batch['rgb'])
 
-        if checkpoint is not None:
-            self.load(checkpoint)
-            self.checkpoint_loaded = True
+        # if checkpoint is not None:
+        #     self.load(checkpoint)
+        #     self.checkpoint_loaded = True
 
     def build_model(self, input, target):
         self.real_B = preprocess(target)
         self.real_A = preprocess(input)
 
-        self.fake_B = self.generator(self.real_A)
+        if self.gen_type == "Unet":
+            self.fake_B = self.generator(self.real_A)
+        else:
+            self.fake_B = self.generator2(self.real_A)
+
 
         self.real_AB = tf.concat([self.real_A, self.real_B], 3)
         self.fake_AB = tf.concat([self.real_A, self.fake_B], 3)
@@ -462,6 +467,36 @@ class pix2pix(object):
             # d8 is (256 x 256 x output_c_dim)
 
             return tf.nn.tanh(self.d8)
+
+    def generator2(self, image, y=None):
+        with tf.variable_scope("generator") as scope:
+
+            s = self.output_size
+
+            # image is (256 x 256 x input_c_dim)
+            e1 = lrelu(instance_norm(conv2d(add_noise(image), 64, k_h=7, k_w=7,d_h=1, d_w=1, name='g_e1_conv'), scope="g_e1_IN"))
+            # e1 is (256 x 256 x self.gf_dim)
+
+            # e1 = tf.pad(e1, [[0, 0], [1, 1], [1, 1], [0, 0]], "CONSTANT")
+            e2 = lrelu(instance_norm(conv2d((add_noise(e1,self.noise_std_dev)), 128,k_h=3, k_w=3, name='g_e2_conv'), scope="g_e2_IN"))
+            # e2 = tf.pad(e2, [[0, 0], [1, 1], [1, 1], [0, 0]], "CONSTANT")
+            e3 = lrelu(instance_norm(conv2d((add_noise(e2,self.noise_std_dev)), 256,k_h=3, k_w=3, name='g_e3_conv'), scope="g_e3_IN"))
+            resB = lrelu(e3)
+
+            for i in range(9):
+                resB = residual_block(resB, n_channels=256, scope="g_resnet_block"+str(i), reuse=tf.AUTO_REUSE)
+
+            # e4 = tf.pad(resB, [[0, 0], [1, 1], [1, 1], [0, 0]], "CONSTANT")
+            e5 = lrelu(instance_norm(deconv2d(resB, [self.batch_size, 128, 128, 256],k_h=3, k_w=3, name='g_e5_deconv'), scope="g_e5_IN"))
+            # e5 = tf.pad(e5, [[0, 0], [1, 1], [1, 1], [0, 0]], "CONSTANT")
+            e6 = lrelu(instance_norm(deconv2d(e5, [self.batch_size, 256, 256, 64],k_h=3, k_w=3, name='g_e6_deconv'), scope="g_e6_IN"))
+
+            # e6 = tf.pad(e6, [[0, 0], [3, 3], [3, 3], [0, 0]], "REFLECT")
+            e7 = conv2d(input_=e6, output_dim=3, k_h=7, k_w=7, d_h=1, d_w=1, name="g_e7_conv")
+
+            return tf.nn.tanh(e7)
+
+
 
     def save(self, checkpoint_dir, step):
         model_name = "pix2pix.model"

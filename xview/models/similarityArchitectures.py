@@ -150,6 +150,7 @@ class simArch(object):
     archs['arch4'] = arch4
 
     def arch5(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
+        "2ch pytorch impl from https://github.com/szagoruyko/cvpr15deepcompare/blob/master/pytorch/eval.py"
         with tf.variable_scope(var_scope) as scope:
             if reuse:
                 tf.get_variable_scope().reuse_variables()

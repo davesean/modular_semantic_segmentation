@@ -84,7 +84,7 @@ def main(dataset, net_config, img_h, img_w, _run):
 
     output_dir = create_directories(_run._id, ex)
 
-    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
+    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.99)
     with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
         # load the dataset class
         data = get_dataset(dataset['name'])

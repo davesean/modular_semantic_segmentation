@@ -61,8 +61,11 @@ def recursive_generator(label,sp,spOG):
     if sp==4:
         input=label
     else:
-        downsampled=tf.image.resize_area(label,(sp//2,sp),align_corners=False)
-        temp = tf.image.resize_bilinear(recursive_generator(downsampled,sp//2,spOG),(sp,sp*2),align_corners=True)
+        # downsampled=tf.image.resize_area(label,(sp//2,sp),align_corners=False) # If image is square, (sp//2,sp//2) if rectang(1:2) (sp//2,sp)
+        # temp = tf.image.resize_bilinear(recursive_generator(downsampled,sp//2,spOG),(sp,sp*2),align_corners=True) # If image is square, (sp,sp) if rectang(1:2) (sp,sp*2)
+        downsampled=tf.image.resize_area(label,(sp//2,sp//2),align_corners=False) # If image is square, (sp//2,sp//2) if rectang(1:2) (sp//2,sp)
+        temp = tf.image.resize_bilinear(recursive_generator(downsampled,sp//2,spOG),(sp,sp),align_corners=True) # If image is square, (sp,sp) if rectang(1:2) (sp,sp*2)
+
         input=tf.concat([temp,label],3)
         # input=tf.concat([tf.image.resize_bilinear(recursive_generator(downsampled,sp//2,spOG),(sp,sp*2),align_corners=True),label],3)
     net=slim.conv2d(input,dim,[3,3],rate=1,normalizer_fn=slim.layer_norm,activation_fn=lrelu,scope='g_'+str(sp)+'_conv1')
@@ -142,10 +145,9 @@ class cascRef(object):
         with tf.variable_scope(tf.get_variable_scope()):
 
             self.generator=recursive_generator(label,self.image_size,self.image_size)
-            with tf.device('/gpu:0'):
-                vgg_real=build_vgg19(real_image[...,::-1],path=self.vgg_checkpoint)
-            with tf.device('/gpu:1'):
-                vgg_fake=build_vgg19(self.generator,path=self.vgg_checkpoint)
+
+            vgg_real=build_vgg19(target[...,::-1],path=self.vgg_checkpoint)
+            vgg_fake=build_vgg19(self.generator,path=self.vgg_checkpoint)
 
             self.p0=compute_error(vgg_real['input'],vgg_fake['input'],label,self.image_size)
             self.p1=compute_error(vgg_real['conv1_2'],vgg_fake['conv1_2'],label,self.image_size)/vgg_factors[0]
@@ -171,27 +173,32 @@ class cascRef(object):
         self.fake_B_sum = tf.summary.image("Generated", self.generator[...,::-1])
 
         self.g_loss_sum = tf.summary.scalar("g_loss", self.G_loss)
-        if self.checkpoint is not None:
-            ckp_path = os.path.join(self.checkpoint,"result_"+str(self.image_size)+"p")
-            ckpt=tf.train.get_checkpoint_state(ckp_path)
-        else:
-            ckpt = False
-        if self.image_size>256 and ckpt:
-            print('loaded '+ckpt.model_checkpoint_path)
-            saver=tf.train.Saver(var_list=[var for var in tf.trainable_variables() if var.name.startswith('g_')])
-            saver.restore(sess,ckpt.model_checkpoint_path)
-        elif ckpt:
-            print('loaded '+ckpt.model_checkpoint_path)
-            saver.restore(sess,ckpt.model_checkpoint_path)
-        elif self.image_size>256:
-            print('loaded '+ckpt.model_checkpoint_path)
-            saver=tf.train.Saver(var_list=[var for var in tf.trainable_variables() if var.name.startswith('g_')])
-            saver.restore(sess,ckpt.model_checkpoint_path)
-            ckpt_prev=tf.train.get_checkpoint_state("result_"+str(self.image_size/2)+"p")
-            saver=tf.train.Saver(var_list=[var for var in tf.trainable_variables() if var.name.startswith('g_') and not var.name.startswith('g_'+str(self.image_size))])
-            print('loaded '+ckpt_prev.model_checkpoint_path)
-            saver.restore(sess,ckpt_prev.model_checkpoint_path)
+
         self.saver = tf.train.Saver()
+
+        if self.checkpoint is not None:
+            self.load(self.checkpoint)
+
+        # if self.checkpoint is not None:
+        #     ckp_path = os.path.join(self.checkpoint,"result_"+str(self.image_size)+"p")
+        #     ckpt=tf.train.get_checkpoint_state(ckp_path)
+        # else:
+        #     ckpt = False
+        # if self.image_size>256 and ckpt:
+        #     print('loaded '+ckpt.model_checkpoint_path)
+        #     saver=tf.train.Saver(var_list=[var for var in tf.trainable_variables() if var.name.startswith('g_')])
+        #     saver.restore(sess,ckpt.model_checkpoint_path)
+        # if ckpt:
+        #     print('loaded '+ckpt.model_checkpoint_path)
+        #     saver.restore(sess,ckpt.model_checkpoint_path)
+        # elif self.image_size>256:
+        #     print('loaded '+ckpt.model_checkpoint_path)
+        #     saver=tf.train.Saver(var_list=[var for var in tf.trainable_variables() if var.name.startswith('g_')])
+        #     saver.restore(sess,ckpt.model_checkpoint_path)
+        #     ckpt_prev=tf.train.get_checkpoint_state("result_"+str(self.image_size/2)+"p")
+        #     saver=tf.train.Saver(var_list=[var for var in tf.trainable_variables() if var.name.startswith('g_') and not var.name.startswith('g_'+str(self.image_size))])
+        #     print('loaded '+ckpt_prev.model_checkpoint_path)
+        #     saver.restore(sess,ckpt_prev.model_checkpoint_path)
 
     def train(self, args):
         """Train cascRef"""
@@ -230,7 +237,7 @@ class cascRef(object):
                     break
             counterTrain += 1
 
-        return vals
+        # return vals
 
     def eval(self, args):
         """Train cascRef"""

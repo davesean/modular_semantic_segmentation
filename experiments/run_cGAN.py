@@ -101,7 +101,7 @@ def main(dataset, net_config, _run):
                         L1_lambda=int(a.l1_weight/a.gan_weight), gf_dim=a.ngf,
                         df_dim=a.ndf,
                         noise_std_dev=a.noise_std_dev,
-                        checkpoint=ckp)
+                        checkpoint=ckp, gen_type=net_config['type'])
 
         if a.mode == 'train':
             tmp = model.train(a)
