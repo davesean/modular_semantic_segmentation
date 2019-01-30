@@ -330,8 +330,7 @@ class DiffDiscrim(object):
 
             output = self.sess.run(self.D, feed_dict={self.iter_handle: handle,
                                                       self.train_flag: True })
-            if k==0:
-                print(output.shape)
+
             output = np.squeeze(output).reshape((self.ppd,self.ppd))
 
             if counter == 1:
