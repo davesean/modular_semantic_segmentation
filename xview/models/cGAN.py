@@ -106,7 +106,7 @@ class pix2pix(object):
         training_batch = iterator.get_next()
 
         self.build_model(training_batch['labels'], training_batch['rgb'])
-
+        self.checkpoint = checkpoint
         # if checkpoint is not None:
         #     self.load(checkpoint)
         #     self.checkpoint_loaded = True
@@ -307,7 +307,12 @@ class pix2pix(object):
         This is used for pipeline usage.
         """
         # Check that a checkpoint was loaded at init
-        assert(self.checkpoint_loaded is not False)
+        assert(self.checkpoint is not None)
+        if self.checkpoint_loaded is False and self.load(self.checkpoint):
+            self.checkpoint_loaded = True
+            print(" [*] Load SUCCESS")
+        else:
+            print(" [!] Load failed...")
 
         synth = np.zeros((images.shape))
 
@@ -329,7 +334,12 @@ class pix2pix(object):
         """Transforms complete dataset
         """
         # Check that a checkpoint was loaded at init
-        assert(self.checkpoint_loaded is not False)
+        assert(self.checkpoint is not None)
+        if self.load(self.checkpoint):
+            print(" [*] Load SUCCESS")
+        else:
+            print(" [!] Load failed...")
+
         set_handles = {}
         subsets = ['validation','measure','training']
 
