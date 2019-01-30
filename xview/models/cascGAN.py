@@ -157,7 +157,7 @@ class cascRef(object):
         self.sess.run(tf.global_variables_initializer())
 
         self.real_B_sum = tf.summary.image("Target", target[...,::-1])
-        self.fake_B_sum = tf.summary.image("Generated", self.generator[...,::-1])
+        self.fake_B_sum = tf.summary.image("Generated", self.generator)
 
         self.g_loss_sum = tf.summary.scalar("g_loss", self.G_loss)
 
