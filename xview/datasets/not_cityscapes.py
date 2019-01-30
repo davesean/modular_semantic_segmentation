@@ -48,6 +48,8 @@ class AddRandomObjects(DataBaseclass):
 
         config.update(data_config)
         self.config = config
+        self.seed = 42
+        np.random.seed(self.seed)
 
         def _get_filenames(self):
 
