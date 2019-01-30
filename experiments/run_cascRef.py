@@ -104,7 +104,7 @@ def main(dataset, net_config, img_h, img_w, _run):
         if a.mode == 'train':
             model.train(a)
         else:
-            model.eval(a)
+            model.transformDatasets(a,data)
 
 
 if __name__ == '__main__':
