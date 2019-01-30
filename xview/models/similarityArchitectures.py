@@ -65,10 +65,6 @@ class simArch(object):
 
     archs = {
         'arch1': arch1
-        # 'arch2': arch2,
-        # 'arch3': arch3,
-        # 'arch4': arch4,
-        # 'arch5': arch5
     }
 
     def arch2(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
@@ -93,42 +89,6 @@ class simArch(object):
             return tf.nn.sigmoid(h4), h4
 
     archs['arch2'] = arch2
-
-    # def arch4(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
-    #     with tf.variable_scope(var_scope) as scope:
-    #         if reuse:
-    #             tf.get_variable_scope().reuse_variables()
-    #         else:
-    #             assert tf.get_variable_scope().reuse == False
-    #         h0 = lrelu(conv2d(image, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv'))
-    #         h1 = lrelu(conv2d(image, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv'))
-    #         pool1 = max_pooling2d(h1, [2, 2], [2, 2], name='s_pool1')
-    #         h2 = lrelu(conv2d(image, 128, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h2_conv'))
-    #         h3 = lrelu(conv2d(image, 128, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h3_conv'))
-    #         pool1 = max_pooling2d(h3, [2, 2], [2, 2], name='s_pool1')
-    #         h4 = lrelu(conv2d(h0, 256, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h4_conv'))
-    #         h5 = conv2d(h1, 1, k_h=8, k_w=8, d_h=1, d_w=1, name='s_h5_conv')
-    #
-    #         return tf.nn.sigmoid(h5), h5
-
-    def arch3(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
-        with tf.variable_scope(var_scope) as scope:
-            if reuse:
-                tf.get_variable_scope().reuse_variables()
-            else:
-                assert tf.get_variable_scope().reuse == False
-            h0 = lrelu(conv2d(image, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv'))
-            h1 = lrelu(conv2d(image, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv'))
-            pool1 = max_pooling2d(h1, [2, 2], [2, 2], name='s_pool1')
-            h2 = lrelu(conv2d(image, 128, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h2_conv'))
-            h3 = lrelu(conv2d(image, 128, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h3_conv'))
-            pool1 = max_pooling2d(h3, [2, 2], [2, 2], name='s_pool1')
-            h4 = lrelu(conv2d(h0, 256, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h4_conv'))
-            h5 = conv2d(h1, 1, k_h=8, k_w=8, d_h=1, d_w=1, name='s_h5_conv')
-
-            return tf.nn.sigmoid(h5), h5
-
-    archs['arch3'] = arch3
 
     def arch4(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
         with tf.variable_scope(var_scope) as scope:
