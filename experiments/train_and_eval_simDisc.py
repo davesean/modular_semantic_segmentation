@@ -12,7 +12,7 @@ from experiments.evaluation import evaluate, import_weights_into_network
 from xview.datasets import get_dataset
 from xview.models import get_model
 from xview.settings import EXP_OUT
-from tests.evaluationFunctions import computePRvalues, computeIOU
+from tests.evaluationFunctions import computePRvalues, computeIOU, computePatchSSIM
 import sys
 import shutil
 
@@ -70,12 +70,14 @@ def predict_network(net, output_dir, paths, data_desc):
     segm = np.zeros((paths['rgb'].shape))
     segm_gt = np.zeros((paths['rgb'].shape))
     mask = np.zeros((paths['rgb'].shape[0],paths['rgb'].shape[1],paths['rgb'].shape[2]))
+    outLabel = np.zeros((paths['rgb'].shape[0],paths['rgb'].shape[1],paths['rgb'].shape[2]))
     for i in range(paths['rgb'].shape[0]):
         img = np.expand_dims(paths['rgb'][i,:,:,:], axis=0)
         data = {'rgb': img, 'depth': tf.zeros(shape=[img.shape[0],img.shape[1],img.shape[2],1],dtype=tf.float32),
                             'labels': tf.zeros(shape=img.shape[0:-1],dtype=tf.int32),
                             'mask': tf.zeros(shape=img.shape[0:-1],dtype=tf.float32)}
         output = net.predict(data)
+        outLabel[i,:,:] = output[0,:,:]
         outputColor = data_desc.coloured_labels(labels=output)
         outputColor = outputColor[0,:,:,:]
         segm[i,:,:,:] = outputColor[...,::-1]
@@ -84,9 +86,9 @@ def predict_network(net, output_dir, paths, data_desc):
         mask[i,:,:] = error_mask(segm[i,:,:,:], segm_gt[i,:,:,:])
 
     if 'mask' in paths:
-        return segm, paths['rgb'], paths['mask'], segm_gt
+        return segm, paths['rgb'], paths['mask'], segm_gt, outLabel
     else:
-        return segm, paths['rgb'], mask, segm_gt
+        return segm, paths['rgb'], mask, segm_gt, outLabel
 
 ex = sc.Experiment()
 # reduce output of progress bars
@@ -108,7 +110,8 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
     setattr(a,'RUN_id',_run._id)
     setattr(b,'EXP_OUT',EXP_OUT)
     setattr(b,'RUN_id',_run._id)
-    data_id=datasetDisc['image_input_dir'].split('/')[-1].split('_')[0]
+    disc_data_path = os.path.join(datasetDisc['image_input_dir'],str(gan_config['checkpoint'])+"_full")
+    data_id=str(gan_config['checkpoint'])
     setattr(b,'DATA_id',data_id)
     # Set up the directories for diagnostics
     output_dir = create_directories(_run._id, ex)
@@ -127,21 +130,33 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
         # create the network
         gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
         GAN_sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
-        # load the dataset class
-        dataGAN = get_dataset(datasetGAN['name'])
-        # data = data(**datasetGAN)
-        cGAN_model = get_model('cGAN')
-        modelGAN = cGAN_model(GAN_sess, checkpoint_dir=output_dir,
-                        data_desc=dataGAN.get_data_description(),
-                        checkpoint=os.path.join(a.EXP_OUT,str(a.checkpoint)))
-        print("INFO: GAN Imported weights succesfully")
+
+        if gan_config['type'] == 'cascRef':
+            dataGAN = get_dataset('cityscapes_cascGAN')
+            cGAN_model = get_model('cascGAN')
+            if a.checkpoint is not None:
+                ckp = os.path.join(a.EXP_OUT,str(a.checkpoint))
+            modelGAN = cGAN_model(GAN_sess,dataset_name='cityscapes_cascGAN',image_size=disc_config['input_image_size'],
+                               checkpoint_dir=output_dir,
+                               data_desc=dataGAN.get_data_description(),
+                               is_training=False, checkpoint=ckp, vgg_checkpoint="/cluster/work/riner/users/haldavid/Checkpoints/VGG_Model/imagenet-vgg-verydeep-19.mat")
+        else:
+            # load the dataset class
+            dataGAN = get_dataset(datasetGAN['name'])
+            # data = data(**datasetGAN)
+            cGAN_model = get_model('cGAN')
+            modelGAN = cGAN_model(GAN_sess, checkpoint_dir=output_dir,
+                            data_desc=dataGAN.get_data_description(),
+                            checkpoint=os.path.join(a.EXP_OUT,str(a.checkpoint)),
+                            gen_type=gan_config['type'])
+        print("INFO: Generative model imported weights succesfully")
 
     Disc_graph = tf.Graph()
     with Disc_graph.as_default():
         gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
         sessD = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
         dataD = get_dataset(datasetDisc['name'])
-        dataD = dataD(datasetDisc['image_input_dir'],**datasetDisc)
+        dataD = dataD(disc_data_path,**datasetDisc)
         disc_model = get_model('simDisc')
 
         disc_checkpoint = None
@@ -163,8 +178,12 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
 
 
     benchmarks = ['wilddash','posneg','valid','measure']
+    #benchmarks = ['measure']
     data_SemSeg = data_desc(**datasetSem)
 
+    thresholds = [0.2,0.4,0.6,0.8]
+    # thresholds = [0.85,0.9,0.95,0.99]
+    _run.info['thresholds'] = thresholds
     for set in benchmarks:
         if set == "measure":
             dataset = data_SemSeg.get_measureset(tf_dataset=False)
@@ -173,15 +192,17 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
         else:
             data = get_dataset(set)
             head, _ = os.path.split(datasetDisc['image_input_dir'])
-            head, _ = os.path.split(head)
             data = data(os.path.join(head,set))
             dataset = data.get_validation_set(tf_dataset=False)
 
-        sem_seg_images, rgb_images, masks, gt_seg_images = predict_output(net,output_dir,dataset,data_SemSeg)
+        sem_seg_images, rgb_images, masks, gt_seg_images, seg_seg_labels = predict_output(net,output_dir,dataset,data_SemSeg)
 
         with GAN_sess.as_default():
             with GAN_graph.as_default():
-                synth_images = modelGAN.transform(a,sem_seg_images)
+                if gan_config['type'] == 'cascRef':
+                    synth_images = modelGAN.transform(a,seg_seg_labels)
+                else:
+                    synth_images = modelGAN.transform(a,sem_seg_images)
 
         with sessD.as_default():
             with Disc_graph.as_default():
@@ -193,10 +214,10 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
 
 ############################################################################################
 
-        _run.info[set+'_IOU'] = computeIOU(simMat, masks)
-        _run.info[set+'_PRvals'] = computePRvalues(simMat, masks)
+        _run.info[set+'_IOU'] = computeIOU(simMat, masks, thresholds)
+        _run.info[set+'_PRvals'] = computePRvalues(simMat, masks, thresholds)
 
-        _run.info[set+'_SSIM_IOU'] = computeIOU(simMatSSIM, masks)
+        _run.info[set+'_SSIM_IOU'] = computeIOU(simMatSSIM, masks, thresholds)
         # _run.info[set+'_SSIM_PRvals'] = computePRvalues(simMatSSIM, masks)
 
         if output_mat and set is not 'measure':
