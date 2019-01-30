@@ -2,8 +2,9 @@ import numpy as np
 import cv2
 from skimage.measure import compare_ssim as ssim
 
-def computePRvalues(simMat, mskMat):
-    thresholds = [0.2,0.4,0.6,0.8]
+def computePRvalues(simMat, mskMat, threshs):
+    thresholds = threshs[:]
+    # thresholds = [0.2,0.4,0.6,0.8]
 
     precision = np.zeros((len(thresholds),1))
     recall = np.zeros((len(thresholds),1))
@@ -56,8 +57,10 @@ def computePRvalues(simMat, mskMat):
 
     return thresholds, precision, recall
 
-def computeIOU(simMat, mskMat):
-    thresholds = [0.2,0.4,0.6,0.8]
+def computeIOU(simMat, mskMat, threshs):
+    thresholds = threshs[:]
+
+    # thresholds = [0.2,0.4,0.6,0.8]
     iou = np.zeros((len(thresholds),1))
     OoD = np.zeros((len(thresholds),1))
 
@@ -96,13 +99,13 @@ def computePatchSSIM(realImgs, synthImgs, k):
     ssimMat = np.zeros((num_samples,num_y,num_x))
 
     for i in range(num_samples):
-        max_synth = np.max(synthImgs[i,:,:,:])
-        min_synth = np.min(synthImgs[i,:,:,:])
-        for y in range(num_y):
-            for x in range(num_x):
-                real_patch = realImgs[i,y*h:(y+1)*h,x*w:(x+1)*w,:]
-                synth_patch = synthImgs[i,y*h:(y+1)*h,x*w:(x+1)*w,:]
+        # max_synth = np.max(synthImgs[i,:,:,:])
+        # min_synth = np.min(synthImgs[i,:,:,:])
+        for y in range(k):
+            for x in range(k):
+                real_patch = realImgs[i,y*num_y:(y+1)*num_y,x*num_x:(x+1)*num_x,:]
+                synth_patch = synthImgs[i,y*num_y:(y+1)*num_y,x*num_x:(x+1)*num_x,:]
 
-                ssimMat[i,y,x] = ssim(real_patch,synth_patch,data_range=(max_synth-min_synth))
+                ssimMat[i,y,x] = ssim(real_patch,synth_patch,data_range=255,multichannel=True)
 
     return ssimMat
