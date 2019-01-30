@@ -52,35 +52,22 @@ def build_vgg19(input,reuse=False,path=None):
     net['conv5_2']=build_net('conv',net['conv5_1'],get_weight_bias(vgg_layers,30),name='vgg_conv5_2')
     return net
 
-def recursive_generator(label,sp,spOG):
+def recursive_generator(label,sp):
     dim=512 if sp>=128 else 1024
-    if sp==512 and (spOG==512 or spOG==1024):
-        dim=128
-    if sp==1024 and spOG==1024:
-        dim=32
     if sp==4:
         input=label
     else:
         # downsampled=tf.image.resize_area(label,(sp//2,sp),align_corners=False) # If image is square, (sp//2,sp//2) if rectang(1:2) (sp//2,sp)
-        # temp = tf.image.resize_bilinear(recursive_generator(downsampled,sp//2,spOG),(sp,sp*2),align_corners=True) # If image is square, (sp,sp) if rectang(1:2) (sp,sp*2)
+        # temp = tf.image.resize_bilinear(recursive_generator(downsampled,sp//2),(sp,sp*2),align_corners=True) # If image is square, (sp,sp) if rectang(1:2) (sp,sp*2)
         downsampled=tf.image.resize_area(label,(sp//2,sp//2),align_corners=False) # If image is square, (sp//2,sp//2) if rectang(1:2) (sp//2,sp)
-        temp = tf.image.resize_bilinear(recursive_generator(downsampled,sp//2,spOG),(sp,sp),align_corners=True) # If image is square, (sp,sp) if rectang(1:2) (sp,sp*2)
-
+        temp = tf.image.resize_bilinear(recursive_generator(downsampled,sp//2),(sp,sp),align_corners=True) # If image is square, (sp,sp) if rectang(1:2) (sp,sp*2)
         input=tf.concat([temp,label],3)
-        # input=tf.concat([tf.image.resize_bilinear(recursive_generator(downsampled,sp//2,spOG),(sp,sp*2),align_corners=True),label],3)
+        # input=tf.concat([tf.image.resize_bilinear(recursive_generator(downsampled,sp//2),(sp,sp*2),align_corners=True),label],3)
     net=slim.conv2d(input,dim,[3,3],rate=1,normalizer_fn=slim.layer_norm,activation_fn=lrelu,scope='g_'+str(sp)+'_conv1')
     net=slim.conv2d(net,dim,[3,3],rate=1,normalizer_fn=slim.layer_norm,activation_fn=lrelu,scope='g_'+str(sp)+'_conv2')
-    if (sp==512 and spOG==512) or (sp==1024 and spOG==1024) or (sp==256 and spOG==256):
+    if sp==256:
         net=slim.conv2d(net,3,[1,1],rate=1,activation_fn=None,scope='g_'+str(sp)+'_conv100')
         net = deprocess(net)
-    # elif (sp==256 and spOG==256):
-    #     net=slim.conv2d(net,27,[1,1],rate=1,activation_fn=None,scope='g_'+str(sp)+'_conv100')
-    #     net = deprocess(net)
-    #
-    #     split0,split1,split2=tf.split(tf.transpose(net,perm=[3,1,2,0]),num_or_size_splits=3,axis=0)
-    #
-    #     net=tf.concat([split0,split1,split2],3)
-
     return net
 
 def compute_error(real,fake,label,size):
@@ -117,8 +104,12 @@ class cascRef(object):
         self.dataset_name = dataset_name
         self.checkpoint_dir = checkpoint_dir
         self.checkpoint = checkpoint
+        self.checkpoint_loaded = False
         # Get the data descriptors with the shape of data coming
         data_description = data_desc
+
+        self.num_classes = data_desc[2]
+
         data_description = [data_description[0], {
             key: [None, *description]
             for key, description in data_description[1].items()}]
@@ -129,13 +120,15 @@ class cascRef(object):
         iterator = tf.data.Iterator.from_string_handle(
             self.iter_handle, *data_description)
         training_batch = iterator.get_next()
+        # if is_training:
         self.vgg_checkpoint=vgg_checkpoint
         assert(self.vgg_checkpoint is not None)
         self.build_model(training_batch['labels'], training_batch['rgb'])
 
 
     def build_model(self, label, target):
-        real_image = preprocess(target)
+        self.target = target
+        self.input = label
         if self.image_size == 256:
             vgg_factors = [1.6, 2.3, 1.8,2.8,12.5]
         else:
@@ -144,7 +137,7 @@ class cascRef(object):
 
         with tf.variable_scope(tf.get_variable_scope()):
 
-            self.generator=recursive_generator(label,self.image_size,self.image_size)
+            self.generator=recursive_generator(label,self.image_size)
 
             vgg_real=build_vgg19(target[...,::-1],path=self.vgg_checkpoint)
             vgg_fake=build_vgg19(self.generator,path=self.vgg_checkpoint)
@@ -156,16 +149,10 @@ class cascRef(object):
             self.p4=compute_error(vgg_real['conv4_2'],vgg_fake['conv4_2'],tf.image.resize_area(label,(self.image_size//8,self.image_size//4)),self.image_size)/vgg_factors[3]
             self.p5=compute_error(vgg_real['conv5_2'],vgg_fake['conv5_2'],tf.image.resize_area(label,(self.image_size//16,self.image_size//8)),self.image_size)*vgg_factors[4]
             self.G_loss=self.p0+self.p1+self.p2+self.p3+self.p4+self.p5
-            # content_loss = tf.add_n([self.p0,self.p1,self.p2,self.p3,self.p4,self.p5])
-            # if self.image_size == 256:
-            #     self.G_loss=tf.reduce_sum(tf.reduce_min(content_loss,reduction_indices=0))*0.999+tf.reduce_sum(tf.reduce_mean(content_loss,reduction_indices=0))*0.001
-            # else:
-            # self.G_loss=content_loss
+
         self.lr=tf.placeholder(tf.float32)
-        if self.image_size == 1024:
-            self.G_opt=tf.train.AdamOptimizer(learning_rate=self.lr).minimize(self.G_loss,var_list=[var for var in tf.trainable_variables() if var.name.startswith('g_1024') or var.name.startswith('g_512')])#only fine-tune the last two refinement module due to memory limitation
-        else:
-            self.G_opt=tf.train.AdamOptimizer(learning_rate=self.lr).minimize(self.G_loss,var_list=[var for var in tf.trainable_variables() if var.name.startswith('g_')])
+
+        self.G_opt=tf.train.AdamOptimizer(learning_rate=self.lr).minimize(self.G_loss,var_list=[var for var in tf.trainable_variables() if var.name.startswith('g_')])
 
         self.sess.run(tf.global_variables_initializer())
 
@@ -177,28 +164,9 @@ class cascRef(object):
         self.saver = tf.train.Saver()
 
         if self.checkpoint is not None:
+            self.checkpoint_loaded = True
             self.load(self.checkpoint)
 
-        # if self.checkpoint is not None:
-        #     ckp_path = os.path.join(self.checkpoint,"result_"+str(self.image_size)+"p")
-        #     ckpt=tf.train.get_checkpoint_state(ckp_path)
-        # else:
-        #     ckpt = False
-        # if self.image_size>256 and ckpt:
-        #     print('loaded '+ckpt.model_checkpoint_path)
-        #     saver=tf.train.Saver(var_list=[var for var in tf.trainable_variables() if var.name.startswith('g_')])
-        #     saver.restore(sess,ckpt.model_checkpoint_path)
-        # if ckpt:
-        #     print('loaded '+ckpt.model_checkpoint_path)
-        #     saver.restore(sess,ckpt.model_checkpoint_path)
-        # elif self.image_size>256:
-        #     print('loaded '+ckpt.model_checkpoint_path)
-        #     saver=tf.train.Saver(var_list=[var for var in tf.trainable_variables() if var.name.startswith('g_')])
-        #     saver.restore(sess,ckpt.model_checkpoint_path)
-        #     ckpt_prev=tf.train.get_checkpoint_state("result_"+str(self.image_size/2)+"p")
-        #     saver=tf.train.Saver(var_list=[var for var in tf.trainable_variables() if var.name.startswith('g_') and not var.name.startswith('g_'+str(self.image_size))])
-        #     print('loaded '+ckpt_prev.model_checkpoint_path)
-        #     saver.restore(sess,ckpt_prev.model_checkpoint_path)
 
     def train(self, args):
         """Train cascRef"""
@@ -239,93 +207,37 @@ class cascRef(object):
 
         # return vals
 
-    def eval(self, args):
-        """Train cascRef"""
-
-        input_data = self.data.get_validation_set()
-        data_iterator = input_data.repeat(args.max_epochs).batch(1).make_one_shot_iterator()
-        data_handle = self.sess.run(data_iterator.string_handle())
-        counter = 0
-        start_time = time.time()
-        while True:
-            try:
-                image = self.sess.run(self.generator,
-                                               feed_dict={ self.iter_handle: data_handle})
-            except tf.errors.OutOfRangeError:
-                print("INFO: Done with all images in set")
-                break
-
-            filename = "target_validation" + str(counter) + ".png"
-            cv2.imwrite(os.path.join(args.file_output_dir,filename), deprocess(image[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-            counter +=1
-
-    def validate(self, args, out=True):
-        """Validate pix2pix"""
-        pred_array = np.zeros((15,2))
-        counter = 1
-
-        if not self.checkpoint_loaded:
-            self.load(os.path.join(args.EXP_OUT,str(args.checkpoint)))
-
-        if not os.path.exists(os.path.join(args.file_output_dir,str(args.checkpoint))):
-            os.makedirs(os.path.join(args.file_output_dir,str(args.checkpoint)))
-
-        validation_data = self.data.get_validation_set()
-        valid_iterator = validation_data.batch(args.batch_size).make_one_shot_iterator()
-        valid_handle = self.sess.run(valid_iterator.string_handle())
-
-        while True:
-            # Retrieve everything you want out of the graph
-            try:
-                outImage, inpt, target, real_val, fake_val = self.sess.run([self.fake_B,self.real_A,self.real_B,self.D,self.D_],
-                                               feed_dict={ self.iter_handle: valid_handle })
-            # When tf dataset is empty this error is thrown
-            except tf.errors.OutOfRangeError:
-                print("INFO: Done with all steps")
-                break
-            pred_array[counter-1,:] = [np.mean(real_val[0]),np.mean(fake_val[0])]
-            if out:
-                # Save the 30 x 30 output of the discriminator
-                filename = str(args.checkpoint)+"_realfield" + str(counter) + ".png"
-                cv2.imwrite(os.path.join(args.file_output_dir,str(args.checkpoint),filename), cv2.resize(255*real_val[0,:,:,0],(args.input_image_size,args.input_image_size),interpolation=cv2.INTER_NEAREST))
-                filename = str(args.checkpoint)+"_fakefield" + str(counter) + ".png"
-                cv2.imwrite(os.path.join(args.file_output_dir,str(args.checkpoint),filename), cv2.resize(255*fake_val[0,:,:,0],(args.input_image_size,args.input_image_size),interpolation=cv2.INTER_NEAREST))
-                # Save the output of the generator
-                filename = str(args.checkpoint)+"_validation" + str(counter) + ".png"
-                cv2.imwrite(os.path.join(args.file_output_dir,str(args.checkpoint),filename), deprocess(outImage[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-                # If needed, save the input and target
-                if args.val_target_output == True:
-                    filename = "input_validation" + str(counter) + ".png"
-                    cv2.imwrite(os.path.join(args.file_output_dir,filename), deprocess(inpt[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-                    filename = "target_validation" + str(counter) + ".png"
-                    cv2.imwrite(os.path.join(args.file_output_dir,filename), deprocess(target[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-            counter += 1
-        return pred_array
-
-    def transform(self, args, images):
-        """Transforms dataset from single images
-        This is used for pipeline usage.
+    def transform(self, args, labels):
+        """Transforms dataset from labels [batch_size, img_h, img_w] or [batch_size, img_h, img_w, num_classes]
+        This is used for pipeline.
         """
         # Check that a checkpoint was loaded at init
         assert(self.checkpoint_loaded is not False)
 
-        synth = np.zeros((images.shape))
+        # If labels not yet in one hot format, transform data.
+        if labels.ndim == 3:
+            labels = (np.arange(self.num_classes) == labels[...,None]).astype(int) # Make one hot for 12 classes.
+            print(labels.shape)
+            stdout.flush()
 
-        data = {'rgb': tf.zeros_like(images, dtype=tf.float32), 'labels': tf.to_float(images)}
+        # synth = np.zeros((labels.shape))
+        synth = np.zeros((labels.shape[0],labels.shape[1],labels.shape[2], 3))
+
+        data = {'rgb': tf.zeros(shape=[labels.shape[0],labels.shape[1],labels.shape[2], 3], dtype=tf.float32), 'labels': tf.to_float(labels)}
 
         iterator = tf.data.Dataset.from_tensor_slices(data)\
                    .batch(1).make_one_shot_iterator()
         handle = self.sess.run(iterator.string_handle())
 
-        for i in range(images.shape[0]):
-            outImage = self.sess.run([self.fake_B],
+        for i in range(labels.shape[0]):
+            outImage = self.sess.run([self.generator],
                                            feed_dict={ self.iter_handle: handle })
 
-            synth[i,:,:,:] = deprocess(outImage[0])
+            synth[i,:,:,:] = outImage[0]
 
         return synth
 
-    def transformDatasets(self, args):
+    def transformDatasets(self, args, data_desc):
         """Transforms complete dataset
         """
         # Check that a checkpoint was loaded at init
@@ -357,7 +269,7 @@ class cascRef(object):
             while True:
                 # Retrieve everything you want from of the graph
                 try:
-                    outImage, inpt, target = self.sess.run([self.fake_B,self.real_A,self.real_B],
+                    outImage, inpt, target = self.sess.run([self.generator,self.input,self.target],
                                                    feed_dict={ self.iter_handle: set_handles[sets] })
                 # When tf dataset is empty this error is thrown
                 except tf.errors.OutOfRangeError:
@@ -366,11 +278,15 @@ class cascRef(object):
 
                 # Save the output of the generator
                 filename = str(args.checkpoint)+"_"+ sets + str(counter) + ".png"
-                cv2.imwrite(os.path.join(local_folder,filename), deprocess(outImage[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                tmp = outImage[...,::-1]
+                cv2.imwrite(os.path.join(local_folder,filename), (tmp[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                # This is wrong, need to transform one hot labels back to bgr image, but I dont need them, so not changing atm
+                outputColor = data_desc.coloured_labels(labels=np.argmax(inpt,axis=3))
+                outputColor = outputColor[0,:,:,:]
                 filename = "input_" + sets + str(counter) + ".png"
-                cv2.imwrite(os.path.join(local_folder,filename), deprocess(inpt[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                cv2.imwrite(os.path.join(local_folder,filename), outputColor[...,::-1], [int(cv2.IMWRITE_JPEG_QUALITY), 90])
                 filename = "target_"+ sets + str(counter) + ".png"
-                cv2.imwrite(os.path.join(local_folder,filename), deprocess(target[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                cv2.imwrite(os.path.join(local_folder,filename), (target[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
                 counter +=1
 
 
