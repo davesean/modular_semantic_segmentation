@@ -25,26 +25,34 @@ def computePRvalues(simMat, mskMat, threshs):
                 mask_sim = 1-mask_sim
                 thresholds.reverse()
 
-            for j in range(ppd):
-                for i in range(ppd):
-                        patch_gt = mask_gt[j*dx:(j+1)*dx,i*dx:(i+1)*dx]
-                        if (np.sum(patch_gt)/patch_gt.size > 0.5):
-                            true_label = 1
-                        else:
-                            true_label = 0
-                        if  mask_sim[j,i] < thresh:
-                            class_label = 0
-                        else:
-                            class_label = 1
+            if ppd < mskMat.shape[1]:
+                for j in range(ppd):
+                    for i in range(ppd):
+                            patch_gt = mask_gt[j*dx:(j+1)*dx,i*dx:(i+1)*dx]
+                            if (np.sum(patch_gt)/patch_gt.size > 0.5):
+                                true_label = 1
+                            else:
+                                true_label = 0
+                            if  mask_sim[j,i] < thresh:
+                                class_label = 0
+                            else:
+                                class_label = 1
 
-                        if (true_label == 1 and class_label == 1):
-                            true_pos_counter+=1
-                        elif (true_label == 1 and class_label == 0):
-                            false_neg_counter+=1
-                        elif (true_label == 0 and class_label == 1):
-                            false_pos_counter+=1
-                        else:
-                            true_neg_counter+=1
+                            if (true_label == 1 and class_label == 1):
+                                true_pos_counter+=1
+                            elif (true_label == 1 and class_label == 0):
+                                false_neg_counter+=1
+                            elif (true_label == 0 and class_label == 1):
+                                false_pos_counter+=1
+                            else:
+                                true_neg_counter+=1
+            else:
+                OoD_mask = (mask_sim > thresh).astype(bool)
+                mask_gt = mask_gt.astype(bool)
+                true_pos_counter = np.sum(np.logical_and(OoD_mask,mask_gt).astype(int))
+                true_neg_counter = np.sum(np.logical_and(~OoD_mask,~mask_gt).astype(int))
+                false_pos_counter = np.sum(np.logical_and(OoD_mask,~mask_gt).astype(int))
+                false_neg_counter = np.sum(np.logical_and(~OoD_mask,mask_gt).astype(int))
 
         if (true_pos_counter+false_pos_counter) == 0:
             precision[t] = 1
@@ -76,8 +84,10 @@ def computeIOU(simMat, mskMat, threshs):
                 thresholds.reverse()
 
             avgOoD += np.sum(mask_gt)/(mskMat.shape[1]*mskMat.shape[2])
-            sim = cv2.resize(mask_sim,(mskMat.shape[1],mskMat.shape[2]),interpolation=cv2.INTER_NEAREST)
-            simMask = (sim>thresh).astype(int)
+            if mask_sim.shape[1] < mskMat.shape[1]:
+                mask_sim = cv2.resize(mask_sim,(mskMat.shape[1],mskMat.shape[2]),interpolation=cv2.INTER_NEAREST)
+
+            simMask = (mask_sim>thresh).astype(int)
 
             # inter = np.sum(simMask[mask_gt.astype(bool)])
             inter = np.sum(mask_gt[simMask.astype(bool)])
