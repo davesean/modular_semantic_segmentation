@@ -96,16 +96,21 @@ class DiffDiscrim(object):
         # self.D, self.D_logits = self.discriminator(PosExample)
         # self.D_, self.D_logits_ = self.discriminator(NegExample,reuse=True)
 
-        self.D, self.D_logits = self.archDisc.get_output(image=PosExample,
+        # Feature Extractor + Decision/Metric
+        self.D, self.D_logits, entropy = self.archDisc.get_output(image=PosExample,
                                                          is_training=self.train_flag,
                                                          bn=self.batch_norm)
-        self.D_, self.D_logits_ = self.archDisc.get_output(image=NegExample,
+        self.D_, self.D_logits_, entropy = self.archDisc.get_output(image=NegExample,
                                                            reuse=True,
                                                            is_training=self.train_flag,
                                                            bn=self.batch_norm)
 
-        self.d_loss_pos = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits, labels=tf.zeros_like(self.D)))
-        self.d_loss_neg = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits_, labels=tf.ones_like(self.D_)))
+        if entropy == 'softmax':
+            self.d_loss_pos = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.D_logits, labels=tf.zeros_like(self.D)))
+            self.d_loss_neg = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.D_logits_, labels=tf.ones_like(self.D_)))
+        elif entropy == 'sigmoid':
+            self.d_loss_pos = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits, labels=tf.zeros_like(self.D)))
+            self.d_loss_neg = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits_, labels=tf.ones_like(self.D_)))
 
         self.d_loss = self.d_loss_pos + self.d_loss_neg
         self.d_sum = tf.summary.histogram("d", self.D)
@@ -331,14 +336,24 @@ class DiffDiscrim(object):
             output = self.sess.run(self.D, feed_dict={self.iter_handle: handle,
                                                       self.train_flag: True })
 
-            output = np.squeeze(output).reshape((self.ppd,self.ppd))
 
-            if counter == 1:
-                output_matrix = np.expand_dims(output, axis=0)
+            if len(output.shape > 2) and output.shape[1]==1 and output.shape[2]==1:
+                output = np.squeeze(output).reshape((self.ppd,self.ppd))
             else:
-                output_matrix = np.concatenate((output_matrix, np.expand_dims(output, axis=0)),axis=0)
+                #  bs h  w  c
+                # [64,32,32,1]
+                # print(output.shape)
+                output = np.squeeze(output, axis=-1)
+                output_temp = np.concatenate((output[0:self.ppd]),axis=1)
+                for l in range(1,self.ppd):
+                    temp_matrix = np.concatenate((output[self.ppd*l:self.ppd*(l+1)]),axis=1)
+                    output_temp = np.concatenate((output_temp,temp_matrix),axis=0)
 
-            counter += 1
+            if k == 0:
+                output_matrix = np.expand_dims(output_temp, axis=0)
+            else:
+                output_matrix = np.concatenate((output_matrix, np.expand_dims(output_temp, axis=0)),axis=0)
+
         return output_matrix
 
     def save(self, checkpoint_dir, step, id):

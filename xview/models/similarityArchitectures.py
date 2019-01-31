@@ -1,7 +1,7 @@
 import tensorflow as tf
 from .vgg16 import vgg16
 from tensorflow.python.layers.layers import max_pooling2d
-
+from xview.models.cGAN_ops import residual_block
 
 class batch_norm(object):
     def __init__(self, epsilon=1e-5, momentum = 0.9, name="batch_norm"):
@@ -23,6 +23,8 @@ def conv2d(input_, output_dim,
         if pad=="VALID":
             conv = tf.pad(input_, [[0,0],[1,1],[1,1],[0,0]], mode="CONSTANT")
             conv = tf.nn.conv2d(conv, w, strides=[1, d_h, d_w, 1], padding=pad)
+        elif pad=="VALID_NOPAD":
+            conv = tf.nn.conv2d(input_, w, strides=[1, d_h, d_w, 1], padding='VALID')
         else:
             conv = tf.nn.conv2d(input_, w, strides=[1, d_h, d_w, 1], padding=pad)
 
@@ -61,7 +63,7 @@ class simArch(object):
             h2 = conv2d(h1, 1, k_h=2, k_w=2, d_h=2, d_w=2, name='s_h2_conv')
             # h2 is (8 x 8 x 1)
 
-            return tf.nn.sigmoid(h2), h2
+            return tf.nn.sigmoid(h2), h2, params['entropy']
 
     archs = {
         'arch1': arch1
@@ -86,7 +88,7 @@ class simArch(object):
             h4 = conv2d(h3, 1, k_h=2, k_w=2, d_h=2, d_w=2, name='s_h4_conv')
             # h4 is (8 x 8 x 1)
 
-            return tf.nn.sigmoid(h4), h4
+            return tf.nn.sigmoid(h4), h4, params['entropy']
 
     archs['arch2'] = arch2
 
@@ -105,7 +107,7 @@ class simArch(object):
             h4 = lrelu(conv2d(pool2, 256, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h4_conv'))
             h5 = conv2d(h4, 1, k_h=8, k_w=8, d_h=8, d_w=8, name='s_h5_conv')
 
-            return tf.nn.sigmoid(h5), h5
+            return tf.nn.sigmoid(h5), h5, params['entropy']
 
     archs['arch4'] = arch4
 
@@ -130,9 +132,114 @@ class simArch(object):
 
             out = dense(flat, input_size=3, output_size=1, num_channels=256,
                         reuse=reuse, name='s_dense_out')
-            return tf.nn.sigmoid(out), out
+            return tf.nn.sigmoid(out), out, params['entropy']
 
     archs['arch5'] = arch5
+
+    def arch6(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
+        with tf.variable_scope(var_scope) as scope:
+            if reuse:
+                tf.get_variable_scope().reuse_variables()
+            else:
+                assert tf.get_variable_scope().reuse == False
+            h = (image+1)/2
+
+            h = tf.pad(h, [[0, 0], [2, 2], [2, 2], [0, 0]], "REFLECT")
+
+            h0 = lrelu(conv2d(h, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv',pad="VALID_NOPAD"))
+            h1 = lrelu(conv2d(h0, 128, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv',pad="VALID_NOPAD"))
+
+            # flat = tf.layers.flatten(h1,name='s_flatten')
+            # out = dense(flat, input_size=32, output_size=1024, num_channels=128,
+            #             reuse=reuse, name='s_dense_out')
+            out = (conv2d(h1, 1, k_h=1, k_w=1, d_h=1, d_w=1, name='s_h2_conv'))
+
+            return tf.nn.sigmoid(out), out, params['entropy']
+
+    archs['arch6'] = arch6
+
+    def arch7(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
+        with tf.variable_scope(var_scope) as scope:
+            if reuse:
+                tf.get_variable_scope().reuse_variables()
+            else:
+                assert tf.get_variable_scope().reuse == False
+            h = (image+1)/2
+
+            # h = tf.pad(h, [[0, 0], [2, 2], [2, 2], [0, 0]], "REFLECT")
+            #
+            # h0 = lrelu(conv2d(h, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv',pad="VALID_NOPAD"))
+            # h1 = lrelu(conv2d(h0, 128, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv',pad="VALID_NOPAD"))
+            # h = h1
+            # for i in range(3):
+            #     h = residual_block(h, n_channels=128, kernel_size=3, scope="resBlock_"+str(i), reuse=reuse)
+            # h = lrelu(conv2d(h, 64, k_h=1, k_w=1, d_h=1, d_w=1, name='s_h2_conv'))
+            # h = (conv2d(h, 1, k_h=1, k_w=1, d_h=1, d_w=1, name='s_h3_conv'))
+            # return tf.nn.sigmoid(h), h
+
+            h = tf.pad(h, [[0, 0], [3, 3], [3, 3], [0, 0]], "REFLECT")
+            h0 = lrelu(conv2d(h, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv',pad="VALID_NOPAD"))
+            h1 = lrelu(conv2d(h0, 128, k_h=5, k_w=5, d_h=1, d_w=1, name='s_h1_conv',pad="VALID_NOPAD"))
+            h = h1
+            for i in range(3):
+                h = residual_block(h, n_channels=128, kernel_size=3, scope="resBlock_"+str(i), reuse=reuse)
+            h = lrelu(conv2d(h, 64, k_h=1, k_w=1, d_h=1, d_w=1, name='s_h2_conv'))
+            h = (conv2d(h, 1, k_h=1, k_w=1, d_h=1, d_w=1, name='s_h3_conv'))
+            return tf.nn.sigmoid(h), h, params['entropy']
+
+
+    archs['arch7'] = arch7
+
+    def arch8(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
+        with tf.variable_scope(var_scope) as scope:
+            if reuse:
+                tf.get_variable_scope().reuse_variables()
+            else:
+                assert tf.get_variable_scope().reuse == False
+            h = (image+1)/2
+
+            h = tf.pad(h, [[0, 0], [8, 8], [8, 8], [0, 0]], "REFLECT")
+
+            h0 = lrelu(conv2d(h, 128, k_h=15, k_w=15, d_h=1, d_w=1, name='s_h0_conv',pad="VALID_NOPAD"))
+            h1 = lrelu(conv2d(h0, 256, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv',pad="VALID_NOPAD"))
+            h = h1
+            for i in range(5):
+                h = residual_block(h, n_channels=256, kernel_size=3, scope="resBlock_"+str(i), reuse=reuse)
+            h = lrelu(conv2d(h, 128, k_h=1, k_w=1, d_h=1, d_w=1, name='s_h2_conv'))
+            h = (conv2d(h, 1, k_h=1, k_w=1, d_h=1, d_w=1, name='s_h3_conv'))
+            return tf.nn.sigmoid(h), h, params['entropy']
+
+
+    archs['arch8'] = arch8
+
+    def arch9(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
+        with tf.variable_scope(var_scope) as scope:
+            if reuse:
+                tf.get_variable_scope().reuse_variables()
+            else:
+                assert tf.get_variable_scope().reuse == False
+            h = ((image+1)/2)*0.79375
+
+            h0 = lrelu(conv2d(h, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv'))
+            h1 = lrelu(conv2d(h0, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv'))
+            pool1 = max_pooling2d(h1, [2, 2], [2, 2], name='s_pool1')
+            h2 = lrelu(conv2d(pool1, 128, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h2_conv'))
+            h3 = lrelu(conv2d(h2, 128, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h3_conv'))
+            pool2 = max_pooling2d(h3, [2, 2], [2, 2], name='s_pool2')
+            h4 = lrelu(conv2d(pool2, 256, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h4_conv'))
+            # 8*8*256
+            flat = tf.layers.flatten(h4,name='s_flatten')
+            d1 = lrelu(dense(flat, input_size=8, output_size=1024, num_channels=256,
+                        reuse=reuse, name='s_dense_out1'))
+            d2 = lrelu(dense(d1, input_size=2, output_size=1024, num_channels=256,
+                        reuse=reuse, name='s_dense_out2'))
+            d3 = dense(d1, input_size=2, output_size=1, num_channels=256,
+                        reuse=reuse, name='s_dense_out3')
+            # return tf.nn.softmax(d3), d3, 'softmax'
+            return tf.nn.sigmoid(d3), d3, params['entropy']
+
+    archs['arch9'] = arch9
+
 
 
 
@@ -151,5 +258,5 @@ class simArch(object):
 
     def get_output(self, image, reuse=False, is_training=True, bn=False):
         params = {'activation': tf.nn.relu, 'padding': 'same',
-                  'batch_normalization': bn}
+                  'batch_normalization': bn, 'entropy': 'sigmoid'}
         return self.archs[self.arch](self, image, reuse=reuse, is_training=is_training, params=params)
