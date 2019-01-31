@@ -217,8 +217,6 @@ class cascRef(object):
         # If labels not yet in one hot format, transform data.
         if labels.ndim == 3:
             labels = (np.arange(self.num_classes) == labels[...,None]).astype(int) # Make one hot for 12 classes.
-            print(labels.shape)
-            stdout.flush()
 
         # synth = np.zeros((labels.shape))
         synth = np.zeros((labels.shape[0],labels.shape[1],labels.shape[2], 3))
