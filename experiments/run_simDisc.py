@@ -73,12 +73,15 @@ def main(dataset, net_config, _run):
         data_id=dataset['image_input_dir'].split('/')[-1].split('_')[0]
         setattr(a,'DATA_id',data_id)
         disc_model = get_model('simDisc')
+        ckp=None
+        if net_config['checkpoint'] is not None:
+            ckp = os.path.join(a.EXP_OUT,str(net_config['checkpoint']))
         model=disc_model(sess=sess, image_size=a.input_image_size,
                      batch_size=a.batch_size, df_dim=a.ndf,
                      input_c_dim=3,
                      checkpoint_dir=output_dir, data=data,
                      momentum=a.batch_momentum, arch=net_config['arch'],
-                     checkpoint=os.path.join(a.EXP_OUT,str(net_config['checkpoint'])))
+                     checkpoint=ckp)
         if a.mode == "train":
             tmp = model.train(a)
             _run.info['predictions'] = tmp
