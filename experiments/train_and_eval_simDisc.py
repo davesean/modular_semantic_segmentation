@@ -101,7 +101,7 @@ def predict_output(net, output_dir, paths, data_desc, _run):
     return predict_network(net, output_dir, paths, data_desc)
 
 @ex.main
-def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN, datasetDisc, starting_weights, input_folder, output_mat, _run):
+def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN, datasetDisc, starting_weights, flag_measure, output_mat, _run):
     for key in gan_config:
         setattr(a, key, gan_config[key])
     for key in disc_config:
@@ -176,9 +176,10 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
         else:
             print("INFO: Init and loaded checpoint for simDisc")
 
-
-    benchmarks = ['wilddash','posneg','valid','measure']
-    #benchmarks = ['measure']
+    if flag_measure:
+        benchmarks = ['measure']
+    else:
+        benchmarks = ['wilddash','posneg','valid','measure']
     data_SemSeg = data_desc(**datasetSem)
 
     thresholds = [0.2,0.4,0.6,0.8]
