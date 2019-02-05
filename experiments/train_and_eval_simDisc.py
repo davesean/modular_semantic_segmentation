@@ -162,9 +162,9 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
         disc_checkpoint = None
         if disc_config['checkpoint'] is not None:
             disc_checkpoint = os.path.join(a.EXP_OUT,str(disc_config['checkpoint']))
-        modelDiff=disc_model(sess=sessD, checkpoint_dir=output_dir,
+        modelDiff=disc_model(sess=sessD, checkpoint_dir=output_dir, pos_weight=disc_config['pos_weight'],
                              data=dataD, arch=disc_config['arch'],
-                             checkpoint=disc_checkpoint)
+                             checkpoint=disc_checkpoint, batch_size=disc_config['batch_size'])
 
         if disc_config['checkpoint'] is None:
             print("INFO: Begin training simDisc")
