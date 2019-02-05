@@ -151,7 +151,7 @@ def flip_labels(labels, c1, c2, prob=0.5):
 
 def augmentate(blob, scale=False, crop=False, hflip=False, vflip=False, gamma=False,
                contrast=False, brightness=False, rotate=False, shear=False,
-               label_flip=False, label_merge=False):
+               label_flip=False, label_merge=False, seed=None):
     """Perform data-augmentations on all modalities of an image blob.
 
     Args:
@@ -170,7 +170,9 @@ def augmentate(blob, scale=False, crop=False, hflip=False, vflip=False, gamma=Fa
         augemted image blob
     """
     modalities = list(blob.keys())
-
+    if seed is not None:
+        np.random.seed(seed)
+        random.seed(seed)
     # find out whether or not we are doing cropping later on
     do_crop = False
     if crop and crop[0] > random.random():
