@@ -56,13 +56,20 @@ def conv2d(input_, output_dim,
 
         return conv
 
-def deconv2d(input_, output_shape,
+def deconv2d(input_, output_shape, filters=None,
              k_h=5, k_w=5, d_h=2, d_w=2, stddev=0.02,
              name="deconv2d", with_w=False, pad="SAME"):
     with tf.variable_scope(name):
         # filter : [height, width, output_channels, in_channels]
-        w = tf.get_variable('w', [k_h, k_w, output_shape[-1], input_.get_shape()[-1]],
-                            initializer=tf.random_normal_initializer(stddev=stddev))
+        try:
+            w = tf.get_variable('w', [k_h, k_w, output_shape[-1], input_.get_shape()[-1]],
+                                initializer=tf.random_normal_initializer(stddev=stddev))
+            biases = tf.get_variable('biases', [output_shape[-1]], initializer=tf.constant_initializer(0.0))
+
+        except TypeError:
+            w = tf.get_variable('w', [k_h, k_w, filters, input_.get_shape()[-1]],
+                                initializer=tf.random_normal_initializer(stddev=stddev))
+            biases = tf.get_variable('biases', [filters], initializer=tf.constant_initializer(0.0))
 
         try:
             deconv = tf.nn.conv2d_transpose(input_, w, output_shape=output_shape,
@@ -72,9 +79,10 @@ def deconv2d(input_, output_shape,
         except AttributeError:
             deconv = tf.nn.deconv2d(input_, w, output_shape=output_shape,
                                 strides=[1, d_h, d_w, 1])
-
-        biases = tf.get_variable('biases', [output_shape[-1]], initializer=tf.constant_initializer(0.0))
-        deconv = tf.reshape(tf.nn.bias_add(deconv, biases), deconv.get_shape())
+        try:
+            deconv = tf.reshape(tf.nn.bias_add(deconv, biases), deconv.get_shape())
+        except:
+            deconv = deconv + biases
 
         if with_w:
             return deconv, w, biases
