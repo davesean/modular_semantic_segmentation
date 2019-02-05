@@ -23,7 +23,7 @@ def preprocess(image):
 
 class DiffDiscrim(object):
     def __init__(self, sess, image_size=256, seed=42,
-                 batch_size=64, df_dim=64, ppd=8,
+                 batch_size=64, df_dim=64, ppd=8, pos_weight=1,
                  input_c_dim=3, is_training=True, arch='arch1', batch_norm=False,
                  checkpoint_dir=None, data=None, momentum=0.9, checkpoint=None):
         """
@@ -48,6 +48,7 @@ class DiffDiscrim(object):
         self.batch_size = batch_size
         self.image_size = image_size
         self.batch_norm = batch_norm
+        self.pos_weight = pos_weight
 
         self.input_c_dim = input_c_dim
         self.df_dim = df_dim
@@ -99,11 +100,13 @@ class DiffDiscrim(object):
         # Feature Extractor + Decision/Metric
         self.D, self.D_logits, entropy = self.archDisc.get_output(image=PosExample,
                                                          is_training=self.train_flag,
-                                                         bn=self.batch_norm)
+                                                         bn=self.batch_norm,
+                                                         bs=self.batch_size)
         self.D_, self.D_logits_, entropy = self.archDisc.get_output(image=NegExample,
                                                            reuse=True,
                                                            is_training=self.train_flag,
-                                                           bn=self.batch_norm)
+                                                           bn=self.batch_norm,
+                                                           bs=self.batch_size)
 
         if entropy == 'softmax':
             self.d_loss_pos = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.D_logits, labels=tf.zeros_like(self.D)))
@@ -112,7 +115,7 @@ class DiffDiscrim(object):
             self.d_loss_pos = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits, labels=tf.zeros_like(self.D)))
             self.d_loss_neg = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits_, labels=tf.ones_like(self.D_)))
 
-        self.d_loss = self.d_loss_pos + self.d_loss_neg
+        self.d_loss = self.pos_weight*self.d_loss_pos + self.d_loss_neg
         self.d_sum = tf.summary.histogram("d", self.D)
         self.d__sum = tf.summary.histogram("d_", self.D_)
         self.target_sum = tf.summary.image("Target", target[...,::-1])
@@ -300,6 +303,35 @@ class DiffDiscrim(object):
     def transform(self, realImages, synthImages, segmImages):
         """ Predict similarity between images """
         counter = 1
+
+        # Check that a checkpoint directory is given, to load from
+        if not self.checkpoint_loaded:
+            assert(False, "No checkpoint loaded, load one at init of model.")
+
+        data = {'labels': tf.to_float(realImages), 'pos': tf.to_float(synthImages), 'neg': tf.zeros_like(tf.to_float(synthImages)),'pos_segm': tf.to_float(segmImages), 'neg_segm': tf.zeros_like(tf.to_float(segmImages)) }
+
+        iterator = tf.data.Dataset.from_tensor_slices(data)\
+                   .batch(1).make_one_shot_iterator()
+        handle = self.sess.run(iterator.string_handle())
+
+
+        for k in range(realImages.shape[0]):
+            output = self.sess.run(self.D, feed_dict={self.iter_handle: handle,
+                                                      self.train_flag: True })
+
+            if output.shape[-1] == 1:
+                output = np.squeeze(output, axis=-1)
+            if k == 0:
+                print(output.shape)
+                output_matrix = output
+            else:
+                output_matrix = np.concatenate((output_matrix, output),axis=0)
+
+        return output_matrix
+
+    def transform2(self, realImages, synthImages, segmImages):
+        """ Predict similarity between images """
+        counter = 1
         dx_h = int(realImages.shape[1]/self.ppd)
         dx_w = int(realImages.shape[1]/self.ppd)
 
@@ -336,14 +368,16 @@ class DiffDiscrim(object):
             output = self.sess.run(self.D, feed_dict={self.iter_handle: handle,
                                                       self.train_flag: True })
 
-
-            if len(output.shape > 2) and output.shape[1]==1 and output.shape[2]==1:
-                output = np.squeeze(output).reshape((self.ppd,self.ppd))
+            if output.ndim == 2 and output.shape[1]==1:
+                output_temp = np.squeeze(output).reshape((self.ppd,self.ppd))
+            elif output.ndim == 3 and output.shape[1]==1 and output.shape[2]==1:
+                output_temp = np.squeeze(output).reshape((self.ppd,self.ppd))
             else:
                 #  bs h  w  c
                 # [64,32,32,1]
                 # print(output.shape)
-                output = np.squeeze(output, axis=-1)
+                if output.ndim == 4:
+                    output = np.squeeze(output, axis=-1)
                 output_temp = np.concatenate((output[0:self.ppd]),axis=1)
                 for l in range(1,self.ppd):
                     temp_matrix = np.concatenate((output[self.ppd*l:self.ppd*(l+1)]),axis=1)
