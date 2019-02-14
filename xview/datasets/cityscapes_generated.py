@@ -158,7 +158,8 @@ class Cityscapes_generated(DataBaseclass):
         # input("Press Enter to continue...")
         # if k==1:
         #     assert(False)
-
+        np.random.seed(42)
+        rng_seed = np.random.randint(3000)
         pos_blob = augmentate(pos_blob, brightness=self.config['augmentation']['brightness'])
         tmp_blob['rgb'] = blob['neg']
         tmp_blob['neg_segm'] = blob['neg_segm']
