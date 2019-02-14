@@ -12,7 +12,7 @@ from experiments.evaluation import evaluate, import_weights_into_network
 from xview.datasets import get_dataset
 from xview.models import get_model
 from xview.settings import EXP_OUT
-from tests.evaluationFunctions import computePRvalues, computeIOU, computePatchSSIM
+from tests.evaluationFunctions import computePRvalues, computeIOU, computePatchSSIM, ShannonEntropy
 import sys
 import shutil
 
@@ -56,7 +56,7 @@ def create_directories(run_id, experiment):
         .append(output_dir)
     return output_dir
 
-def predict_network(net, output_dir, paths, data_desc):
+def predict_network(net, output_dir, paths, data_desc, flag_entropy, num_classes):
     """
     Predict on a given dataset.
 
@@ -71,6 +71,9 @@ def predict_network(net, output_dir, paths, data_desc):
     segm_gt = np.zeros((paths['rgb'].shape))
     mask = np.zeros((paths['rgb'].shape[0],paths['rgb'].shape[1],paths['rgb'].shape[2]))
     outLabel = np.zeros((paths['rgb'].shape[0],paths['rgb'].shape[1],paths['rgb'].shape[2]))
+    probs = np.zeros((paths['rgb'].shape[0],paths['rgb'].shape[1],paths['rgb'].shape[2],num_classes))
+
+
     for i in range(paths['rgb'].shape[0]):
         img = np.expand_dims(paths['rgb'][i,:,:,:], axis=0)
         data = {'rgb': img, 'depth': tf.zeros(shape=[img.shape[0],img.shape[1],img.shape[2],1],dtype=tf.float32),
@@ -85,10 +88,15 @@ def predict_network(net, output_dir, paths, data_desc):
         segm_gt[i,:,:,:] = outputColor[...,::-1]
         mask[i,:,:] = error_mask(segm[i,:,:,:], segm_gt[i,:,:,:])
 
+        if flag_entropy:
+            out_prob = net.predict(data, output_attr='prob')
+            probs[i,:,:,:] = out_prob[0,:,:,:]
+
+
     if 'mask' in paths:
-        return segm, paths['rgb'], paths['mask'], segm_gt, outLabel
+        return segm, paths['rgb'], paths['mask'], segm_gt, outLabel, probs
     else:
-        return segm, paths['rgb'], mask, segm_gt, outLabel
+        return segm, paths['rgb'], mask, segm_gt, outLabel, probs
 
 ex = sc.Experiment()
 # reduce output of progress bars
@@ -96,12 +104,12 @@ ex.captured_out_filter = apply_backspaces_and_linefeeds
 ex.observers.append(get_observer())
 
 @ex.capture
-def predict_output(net, output_dir, paths, data_desc, _run):
+def predict_output(net, output_dir, paths, data_desc, flag_entropy, num_classes, _run):
     """Predict data on a given network"""
-    return predict_network(net, output_dir, paths, data_desc)
+    return predict_network(net, output_dir, paths, data_desc, flag_entropy, num_classes)
 
 @ex.main
-def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN, datasetDisc, starting_weights, flag_measure, output_mat, _run):
+def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN, datasetDisc, starting_weights, flag_measure, output_mat, flag_entropy, thresholds, _run):
     for key in gan_config:
         setattr(a, key, gan_config[key])
     for key in disc_config:
@@ -163,7 +171,7 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
         if disc_config['checkpoint'] is not None:
             disc_checkpoint = os.path.join(a.EXP_OUT,str(disc_config['checkpoint']))
         modelDiff=disc_model(sess=sessD, checkpoint_dir=output_dir, pos_weight=disc_config['pos_weight'],
-                             data=dataD, arch=disc_config['arch'],
+                             data=dataD, arch=disc_config['arch'], use_grayscale=disc_config['use_grayscale'],
                              checkpoint=disc_checkpoint, batch_size=disc_config['batch_size'])
 
         if disc_config['checkpoint'] is None:
@@ -182,7 +190,7 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
         benchmarks = ['wilddash','posneg','valid','measure']
     data_SemSeg = data_desc(**datasetSem)
 
-    thresholds = [0.2,0.4,0.6,0.8]
+    # thresholds = [0.2,0.4,0.6,0.8]
     # thresholds = [0.85,0.9,0.95,0.99]
     _run.info['thresholds'] = thresholds
     for set in benchmarks:
@@ -196,7 +204,7 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
             data = data(os.path.join(head,set))
             dataset = data.get_validation_set(tf_dataset=False)
 
-        sem_seg_images, rgb_images, masks, gt_seg_images, seg_seg_labels = predict_output(net,output_dir,dataset,data_SemSeg)
+        sem_seg_images, rgb_images, masks, gt_seg_images, seg_seg_labels, output_probs = predict_output(net,output_dir,dataset,data_SemSeg,flag_entropy,net_config['num_classes'])
 
         with GAN_sess.as_default():
             with GAN_graph.as_default():
@@ -215,11 +223,19 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
 
 ############################################################################################
 
-        _run.info[set+'_IOU'] = computeIOU(simMat, masks, thresholds)
-        _run.info[set+'_PRvals'] = computePRvalues(simMat, masks, thresholds)
+        temp_iou = computeIOU(simMat, masks, thresholds)
+        temp_pr = computePRvalues(simMat, masks, thresholds)
+        _run.info[set+'_IOU'] = temp_iou
+        _run.info[set+'_PRvals'] = temp_pr
+        _run.info[set+'_F1score'] = 2*np.asarray(temp_pr[1])*np.asarray(temp_pr[2])/(np.asarray(temp_pr[1])+np.asarray(temp_pr[2]))
 
-        _run.info[set+'_SSIM_IOU'] = computeIOU(simMatSSIM, masks, thresholds)
+        # _run.info[set+'_SSIM_IOU'] = computeIOU(simMatSSIM, masks, thresholds)
         # _run.info[set+'_SSIM_PRvals'] = computePRvalues(simMatSSIM, masks)
+
+        if flag_entropy and set is not 'posneg':
+            entropy = ShannonEntropy(output_probs)
+            _run.info[set+'_meanVarEntropyOoD'] = [np.mean(entropy[masks.astype(bool)]),np.var(entropy[masks.astype(bool)],ddof=1)]
+            _run.info[set+'_meanVarEntropyID'] = [np.mean(entropy[~masks.astype(bool)]),np.var(entropy[~masks.astype(bool)],ddof=1)]
 
         if output_mat and set is not 'measure':
 
@@ -247,7 +263,9 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
             matrix_path = os.path.join(output_dir,set,"gtsMat.npy")
             np.save(matrix_path, gt_seg_images)
 
-
+            if flag_entropy:
+                matrix_path = os.path.join(output_dir,set,"entMat.npy")
+                np.save(matrix_path, entropy)
 
 if __name__ == '__main__':
     ex.run_commandline()
