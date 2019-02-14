@@ -1,7 +1,7 @@
 import tensorflow as tf
 from .vgg16 import vgg16
 from tensorflow.python.layers.layers import max_pooling2d
-from xview.models.cGAN_ops import residual_block, deconv2d
+from xview.models.cGAN_ops import residual_block, deconv2d, instance_norm
 
 class batch_norm(object):
     def __init__(self, epsilon=1e-5, momentum = 0.9, name="batch_norm"):
@@ -128,9 +128,6 @@ class simArch(object):
             pool2 = max_pooling2d(h1, [2, 2], [2, 2], name='s_pool2', padding='same')
             h2 = lrelu(conv2d(pool2, 256, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h2_conv'))
 
-            # flat = tf.layers.flatten(h2,name='s_flatten')
-            # out = tf.layers.dense(inputs=flat, units=1, activation=lrelu,
-            #                       reuse=reuse,name='s_dense_out')
 
             out = dense(h2, input_size=3, output_size=1, num_channels=256,
                         reuse=reuse, name='s_dense_out')
@@ -167,17 +164,6 @@ class simArch(object):
             else:
                 assert tf.get_variable_scope().reuse == False
             h = (image+1)/2
-
-            # h = tf.pad(h, [[0, 0], [2, 2], [2, 2], [0, 0]], "REFLECT")
-            #
-            # h0 = lrelu(conv2d(h, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv',pad="VALID_NOPAD"))
-            # h1 = lrelu(conv2d(h0, 128, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv',pad="VALID_NOPAD"))
-            # h = h1
-            # for i in range(3):
-            #     h = residual_block(h, n_channels=128, kernel_size=3, scope="resBlock_"+str(i), reuse=reuse)
-            # h = lrelu(conv2d(h, 64, k_h=1, k_w=1, d_h=1, d_w=1, name='s_h2_conv'))
-            # h = (conv2d(h, 1, k_h=1, k_w=1, d_h=1, d_w=1, name='s_h3_conv'))
-            # return tf.nn.sigmoid(h), h
 
             h = tf.pad(h, [[0, 0], [3, 3], [3, 3], [0, 0]], "REFLECT")
             h0 = lrelu(conv2d(h, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv',pad="VALID_NOPAD"))
@@ -268,39 +254,6 @@ class simArch(object):
 
     archs['arch10'] = arch10
 
-    def arch11(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
-        with tf.variable_scope(var_scope) as scope:
-            if reuse:
-                tf.get_variable_scope().reuse_variables()
-            else:
-                assert tf.get_variable_scope().reuse == False
-            h = ((image+1)/2)*0.79375
-
-            h = tf.pad(h, [[0, 0], [3, 3], [3, 3], [0, 0]], "REFLECT")
-            h0 = lrelu(conv2d(h, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv',pad="VALID_NOPAD"))
-            h1 = lrelu(conv2d(h0, 128, k_h=5, k_w=5, d_h=1, d_w=1, name='s_h1_conv',pad="VALID_NOPAD"))
-
-            for i in range(3):
-                h1 = residual_block(h1, n_channels=128, kernel_size=3, scope="resBlock_"+str(i), reuse=reuse)
-
-            # 32*32*128
-            # flat = tf.layers.flatten(h,name='s_flatten')
-            d1 = lrelu(dense(h1, input_size=32, output_size=2048, num_channels=128,
-                        reuse=reuse, name='s_dense_out1'))
-
-            d2 = lrelu(dense(d1, input_size=2, output_size=1024, num_channels=512,
-                        reuse=reuse, name='s_dense_out2'))
-
-            d3 = dense(d2, input_size=2, output_size=1024, num_channels=256,
-                        reuse=reuse, name='s_dense_out3')
-
-            out =tf.reshape(d3, [tf.shape(h0)[0],32 ,32])
-
-            return tf.nn.sigmoid(out), out, params['entropy']
-
-
-    archs['arch11'] = arch11
-
     def arch12(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
         with tf.variable_scope(var_scope) as scope:
             if reuse:
@@ -373,6 +326,228 @@ class simArch(object):
             return tf.nn.sigmoid(dh3), dh3, params['entropy']
 
     archs['arch13'] = arch13
+
+    def arch14(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
+        with tf.variable_scope(var_scope) as scope:
+            if reuse:
+                tf.get_variable_scope().reuse_variables()
+            else:
+                assert tf.get_variable_scope().reuse == False
+            h = ((image+1)/2)*0.79375
+            bp = 11
+            h = tf.pad(h, [[0, 0], [bp, bp], [bp, bp], [0, 0]], "REFLECT")
+
+            h0 = lrelu(conv2d(h, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv',pad="VALID_NOPAD"))
+            h1 = lrelu(conv2d(h0, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv',pad="VALID_NOPAD"))
+            pool1 = max_pooling2d(h1, [2, 2], [2, 2], name='s_pool1',padding='VALID')
+            h2 = lrelu(conv2d(pool1, 128, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h2_conv',pad="VALID_NOPAD"))
+            h3 = lrelu(conv2d(h2, 128, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h3_conv',pad="VALID_NOPAD"))
+            pool2 = max_pooling2d(h3, [2, 2], [2, 2], name='s_pool2',padding='VALID')
+            h4 = lrelu(conv2d(pool2, 256, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h4_conv',pad="VALID_NOPAD"))
+            h4 = conv2d(h4, 1, k_h=1, k_w=1, d_h=1, d_w=1, name='s_h5_conv')
+
+            out = tf.image.resize_images(h4, [tf.shape(image)[1], tf.shape(image)[2]])
+
+            return tf.nn.sigmoid(out), out, params['entropy']
+
+    archs['arch14'] = arch14
+
+    def arch15(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
+        with tf.variable_scope(var_scope) as scope:
+            if reuse:
+                tf.get_variable_scope().reuse_variables()
+            else:
+                assert tf.get_variable_scope().reuse == False
+            # 32x32x6
+            h = ((image+1)/2)
+
+            h0 = lrelu(conv2d(h, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv'))
+            h1 = lrelu(conv2d(h0, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv'))
+            pool1 = max_pooling2d(h1, [2, 2], [2, 2], name='s_pool1')
+            h2 = lrelu(conv2d(pool1, self.df_dim*2, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h2_conv'))
+            h3 = lrelu(conv2d(h2, self.df_dim*2, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h3_conv'))
+            pool2 = max_pooling2d(h3, [2, 2], [2, 2], name='s_pool2')
+            h4 = lrelu(conv2d(pool2, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h4_conv'))
+            h5 = lrelu(conv2d(h4, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h5_conv'))
+            h6 = lrelu(conv2d(h5, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h6_conv'))
+
+            # 8x8x128
+            dh2_out_shape = tf.stack([tf.shape(image)[0], tf.to_int32(tf.shape(image)[1]/2), tf.to_int32(tf.shape(image)[2]/2), self.df_dim*2])
+            dh2 = lrelu(deconv2d(h6,output_shape=dh2_out_shape, name='s_dh2', filters=self.df_dim*2))
+            # 16x16x64
+            dh3_out_shape = tf.stack([tf.shape(image)[0], tf.shape(image)[1], tf.shape(image)[2], 1])
+            dh3 = deconv2d(dh2,output_shape=dh3_out_shape, name='s_dh3', filters=1)
+            # 32x32x1
+
+            return tf.nn.sigmoid(dh3), dh3, params['entropy']
+
+    archs['arch15'] = arch15
+
+    def arch16(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
+        with tf.variable_scope(var_scope) as scope:
+            if reuse:
+                tf.get_variable_scope().reuse_variables()
+            else:
+                assert tf.get_variable_scope().reuse == False
+            h = ((image+1)/2)*0.79375
+            #32x32x6
+            h0 = lrelu(conv2d(h, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv'))
+            #32x32xself.df_dim
+            h1 = lrelu(conv2d(h0, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv'))
+            #32x32xself.df_dim
+            pool1 = max_pooling2d(h1, [2, 2], [2, 2], name='s_pool1')
+            #16x16xself.df_dim
+            h2 = lrelu(conv2d(pool1, self.df_dim*2, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h2_conv'))
+            #16x16xself.df_dim*2
+            h3 = lrelu(conv2d(h2, self.df_dim*2, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h3_conv'))
+            #16x16xself.df_dim*2
+            pool2 = max_pooling2d(h3, [2, 2], [2, 2], name='s_pool2')
+            #8x8xself.df_dim*2
+            h4 = lrelu(conv2d(pool2, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h4_conv'))
+            h5 = lrelu(conv2d(h4, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h5_conv'))
+            h6 = lrelu(conv2d(h5, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h6_conv'))
+            #8x8xself.df_dim*4
+            pool3 = max_pooling2d(h6, [2, 2], [2, 2], name='s_pool2')
+            #4x4xself.df_dim*4
+            h7 = lrelu(conv2d(pool3, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h7_conv'))
+
+            # 4x4x256
+            dh1_out_shape = tf.stack([tf.shape(image)[0], tf.to_int32(tf.shape(image)[1]/4), tf.to_int32(tf.shape(image)[2]/4), self.df_dim*2])
+            dh1 = lrelu(deconv2d(h7,output_shape=dh1_out_shape, name='s_dh1', filters=self.df_dim*2))
+            dh1 = tf.concat([dh1, pool2], 3)
+            # 8x8x128 x2
+            dh2_out_shape = tf.stack([tf.shape(image)[0], tf.to_int32(tf.shape(image)[1]/2), tf.to_int32(tf.shape(image)[2]/2), self.df_dim])
+            dh2 = lrelu(deconv2d(dh1,output_shape=dh2_out_shape, name='s_dh2', filters=self.df_dim))
+            dh2 = tf.concat([dh2, pool1], 3)
+            # 16x16x64 x2
+            dh3_out_shape = tf.stack([tf.shape(image)[0], tf.shape(image)[1], tf.shape(image)[2], 1])
+            dh3 = deconv2d(dh2,output_shape=dh3_out_shape, name='s_dh3', filters=1)
+            # 32x32x1
+
+            return tf.nn.sigmoid(dh3), dh3, params['entropy']
+
+    archs['arch16'] = arch16
+
+    def arch17(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
+        with tf.variable_scope(var_scope) as scope:
+            if reuse:
+                tf.get_variable_scope().reuse_variables()
+            else:
+                assert tf.get_variable_scope().reuse == False
+            h = ((image+1)/2)*0.79375
+            #32x32x6
+            h0 = lrelu(conv2d(h, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv'))
+            #32x32xself.df_dim
+            h1 = lrelu(instance_norm(conv2d(h0, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv'), scope="s_h1_IN"))
+            #32x32xself.df_dim
+            pool1 = max_pooling2d(h1, [2, 2], [2, 2], name='s_pool1')
+            #16x16xself.df_dim
+            h2 = lrelu(instance_norm(conv2d(pool1, self.df_dim*2, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h2_conv'), scope="s_h2_IN"))
+            #16x16xself.df_dim*2
+            h3 = lrelu(instance_norm(conv2d(h2, self.df_dim*2, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h3_conv'), scope="s_h3_IN"))
+            #16x16xself.df_dim*2
+            pool2 = max_pooling2d(h3, [2, 2], [2, 2], name='s_pool2')
+            #8x8xself.df_dim*2
+            h4 = lrelu(instance_norm(conv2d(pool2, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h4_conv'), scope="s_h4_IN"))
+            h5 = lrelu(instance_norm(conv2d(h4, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h5_conv'), scope="s_h5_IN"))
+            h6 = lrelu(instance_norm(conv2d(h5, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h6_conv'), scope="s_h6_IN"))
+            #8x8xself.df_dim*4
+            pool3 = max_pooling2d(h6, [2, 2], [2, 2], name='s_pool2')
+            #4x4xself.df_dim*4
+            h7 = lrelu(instance_norm(conv2d(pool3, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h7_conv'), scope="s_h7_IN"))
+
+            # 4x4x256
+            dh1_out_shape = tf.stack([tf.shape(image)[0], tf.to_int32(tf.shape(image)[1]/4), tf.to_int32(tf.shape(image)[2]/4), self.df_dim*2])
+            dh1 = lrelu(instance_norm(deconv2d(h7,output_shape=dh1_out_shape, name='s_dh1', filters=self.df_dim*2), scope="s_dh1_IN"))
+            dh1 = tf.concat([dh1, pool2], 3)
+            # 8x8x128 x2
+            dh2_out_shape = tf.stack([tf.shape(image)[0], tf.to_int32(tf.shape(image)[1]/2), tf.to_int32(tf.shape(image)[2]/2), self.df_dim])
+            dh2 = lrelu(instance_norm(deconv2d(dh1,output_shape=dh2_out_shape, name='s_dh2', filters=self.df_dim),scope="s_dh2_IN"))
+            dh2 = tf.concat([dh2, pool1], 3)
+            # 16x16x64 x2
+            dh3_out_shape = tf.stack([tf.shape(image)[0], tf.shape(image)[1], tf.shape(image)[2], 1])
+            dh3 = deconv2d(dh2,output_shape=dh3_out_shape, name='s_dh3', filters=1)
+            # 32x32x1
+
+            return tf.nn.sigmoid(dh3), dh3, params['entropy']
+
+    archs['arch17'] = arch17
+
+    def arch18(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
+        with tf.variable_scope(var_scope) as scope:
+            if reuse:
+                tf.get_variable_scope().reuse_variables()
+            else:
+                assert tf.get_variable_scope().reuse == False
+            h = ((image+1)/2)*0.79375
+            #32x32x6
+            h0 = lrelu(conv2d(h, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv'))
+            #32x32xself.df_dim
+            h1 = lrelu(instance_norm(conv2d(h0, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv'), scope="s_h1_IN"))
+            #32x32xself.df_dim
+            pool1 = max_pooling2d(h1, [2, 2], [2, 2], name='s_pool1')
+            #16x16xself.df_dim
+            h2 = lrelu(instance_norm(conv2d(pool1, self.df_dim*2, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h2_conv'), scope="s_h2_IN"))
+            #16x16xself.df_dim*2
+            h3 = lrelu(instance_norm(conv2d(h2, self.df_dim*2, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h3_conv'), scope="s_h3_IN"))
+            #16x16xself.df_dim*2
+            pool2 = max_pooling2d(h3, [2, 2], [2, 2], name='s_pool2')
+            #8x8xself.df_dim*2
+            h4 = lrelu(instance_norm(conv2d(pool2, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h4_conv'), scope="s_h4_IN"))
+            h5 = lrelu(instance_norm(conv2d(h4, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h5_conv'), scope="s_h5_IN"))
+            h6 = lrelu(instance_norm(conv2d(h5, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h6_conv'), scope="s_h6_IN"))
+            #8x8xself.df_dim*4
+            pool3 = max_pooling2d(h6, [2, 2], [2, 2], name='s_pool2')
+            #4x4xself.df_dim*4
+            h7 = lrelu(instance_norm(conv2d(pool3, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h7_conv'), scope="s_h7_IN"))
+
+            # 4x4x256
+            dh1_out_shape = tf.stack([tf.shape(image)[0], tf.to_int32(tf.shape(image)[1]/4), tf.to_int32(tf.shape(image)[2]/4), self.df_dim*2])
+            dh1 = lrelu(instance_norm(tf.nn.dropout(deconv2d(h7,output_shape=dh1_out_shape, name='s_dh1', filters=self.df_dim*2), 0.5), scope="s_dh1_IN"))
+            dh1 = tf.concat([dh1, pool2], 3)
+            # 8x8x128 x2
+            dh2_out_shape = tf.stack([tf.shape(image)[0], tf.to_int32(tf.shape(image)[1]/2), tf.to_int32(tf.shape(image)[2]/2), self.df_dim])
+            dh2 = lrelu(instance_norm(deconv2d(dh1,output_shape=dh2_out_shape, name='s_dh2', filters=self.df_dim),scope="s_dh2_IN"))
+            dh2 = tf.concat([dh2, pool1], 3)
+            # 16x16x64 x2
+            dh3_out_shape = tf.stack([tf.shape(image)[0], tf.shape(image)[1], tf.shape(image)[2], 1])
+            dh3 = deconv2d(dh2,output_shape=dh3_out_shape, name='s_dh3', filters=1)
+            # 32x32x1
+
+            return tf.nn.sigmoid(dh3), dh3, params['entropy']
+
+    archs['arch18'] = arch18
+
+    def arch19(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
+        with tf.variable_scope(var_scope) as scope:
+            if reuse:
+                tf.get_variable_scope().reuse_variables()
+            else:
+                assert tf.get_variable_scope().reuse == False
+            h = ((image+1)/2)*0.79375
+            # 32x32x6
+            h0 = lrelu(conv2d(h, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv'))
+            h1 = lrelu(conv2d(h0, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv'))
+            pool1 = max_pooling2d(h1, [2, 2], [2, 2], name='s_pool1')
+            h2 = lrelu(conv2d(pool1, self.df_dim*2, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h2_conv'))
+            h3 = lrelu(conv2d(h2, self.df_dim*2, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h3_conv'))
+            pool2 = max_pooling2d(h3, [2, 2], [2, 2], name='s_pool2')
+            h4 = lrelu(conv2d(pool2, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h4_conv'))
+            h5 = lrelu(conv2d(h4, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h5_conv'))
+
+            # 8x8x128
+            dh2_out_shape = tf.stack([tf.shape(image)[0], tf.to_int32(tf.shape(image)[1]/2), tf.to_int32(tf.shape(image)[2]/2), self.df_dim])
+            dh2 = lrelu(deconv2d(h5,output_shape=dh2_out_shape, name='s_dh2', filters=self.df_dim))
+            # 16x16x64
+            dh3_out_shape = tf.stack([tf.shape(image)[0], tf.shape(image)[1], tf.shape(image)[2], 1])
+            dh2 = tf.concat([dh2, h3], 3)
+            dh3 = deconv2d(dh2,output_shape=dh3_out_shape, name='s_dh3', filters=1)
+            # 32x32x1
+
+            return tf.nn.sigmoid(dh3), dh3, params['entropy']
+
+    archs['arch19'] = arch19
+
 
     def __init__(self, df_dim=64, batch_momentum=0.9, arch='arch1', archs=archs):
         """

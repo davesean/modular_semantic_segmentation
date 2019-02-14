@@ -12,8 +12,10 @@ from PIL import Image
 from tensorflow.python.framework import ops
 from xview.models.similarityArchitectures import simArch
 
-def preprocess(image):
+def preprocess(image, grayscale=False):
     with tf.name_scope("preprocess"):
+        if grayscale:
+            image = tf.image.rgb_to_grayscale(image[...,::-1])
         # [0, 255] => [-1, 1]
         return image/255 * 2 - 1
 # def deprocess(image):
@@ -23,7 +25,7 @@ def preprocess(image):
 
 class DiffDiscrim(object):
     def __init__(self, sess, image_size=256, seed=42,
-                 batch_size=64, df_dim=64, ppd=8, pos_weight=1,
+                 batch_size=64, df_dim=64, ppd=8, pos_weight=1, use_grayscale=False,
                  input_c_dim=3, is_training=True, arch='arch1', batch_norm=False,
                  checkpoint_dir=None, data=None, momentum=0.9, checkpoint=None):
         """
@@ -49,11 +51,13 @@ class DiffDiscrim(object):
         self.image_size = image_size
         self.batch_norm = batch_norm
         self.pos_weight = pos_weight
+        self.use_grayscale = use_grayscale
 
         self.input_c_dim = input_c_dim
         self.df_dim = df_dim
 
         self.batch_momentum = momentum
+        self.arch = arch
         self.archDisc = simArch(df_dim=df_dim, arch=arch)
 
         self.data = data
@@ -81,9 +85,9 @@ class DiffDiscrim(object):
 
     def build_model(self, target, pos, neg, pos_segm, neg_segm):
         tf.set_random_seed(self.seed)
-        self.target_placeholder = preprocess(target)
-        self.pos_placeholder = preprocess(pos)
-        self.neg_placeholder = preprocess(neg)
+        self.target_placeholder = preprocess(target,self.use_grayscale)
+        self.pos_placeholder = preprocess(pos,self.use_grayscale)
+        self.neg_placeholder = preprocess(neg,self.use_grayscale)
         self.pos_segm_placeholder = preprocess(pos_segm)
         self.neg_segm_placeholder = preprocess(neg_segm)
         self.train_flag = tf.placeholder(tf.bool, name="Train_flag")
@@ -300,95 +304,106 @@ class DiffDiscrim(object):
             text_file.write("%d. \t %f \n" % (pred_array[i,0],pred_array[i,1]))
         text_file.close()
 
+
+
     def transform(self, realImages, synthImages, segmImages):
-        """ Predict similarity between images """
-        counter = 1
+        def transformConv(self, realImages, synthImages, segmImages):
+            """ Predict similarity between images """
+            counter = 1
 
-        # Check that a checkpoint directory is given, to load from
-        if not self.checkpoint_loaded:
-            assert(False, "No checkpoint loaded, load one at init of model.")
+            # Check that a checkpoint directory is given, to load from
+            if not self.checkpoint_loaded:
+                assert(False, "No checkpoint loaded, load one at init of model.")
 
-        data = {'labels': tf.to_float(realImages), 'pos': tf.to_float(synthImages), 'neg': tf.zeros_like(tf.to_float(synthImages)),'pos_segm': tf.to_float(segmImages), 'neg_segm': tf.zeros_like(tf.to_float(segmImages)) }
-
-        iterator = tf.data.Dataset.from_tensor_slices(data)\
-                   .batch(1).make_one_shot_iterator()
-        handle = self.sess.run(iterator.string_handle())
-
-
-        for k in range(realImages.shape[0]):
-            output = self.sess.run(self.D, feed_dict={self.iter_handle: handle,
-                                                      self.train_flag: True })
-
-            if output.shape[-1] == 1:
-                output = np.squeeze(output, axis=-1)
-            if k == 0:
-                print(output.shape)
-                output_matrix = output
-            else:
-                output_matrix = np.concatenate((output_matrix, output),axis=0)
-
-        return output_matrix
-
-    def transform2(self, realImages, synthImages, segmImages):
-        """ Predict similarity between images """
-        counter = 1
-        dx_h = int(realImages.shape[1]/self.ppd)
-        dx_w = int(realImages.shape[1]/self.ppd)
-
-        # Check that a checkpoint directory is given, to load from
-        if not self.checkpoint_loaded:
-            assert(False, "No checkpoint loaded, load one at init of model.")
-
-        for k in range(realImages.shape[0]):
-            input = np.expand_dims(realImages[k,:,:,:],axis=0)
-            synth = np.expand_dims(synthImages[k,:,:,:],axis=0)
-            segm = np.expand_dims(segmImages[k,:,:,:],axis=0)
-
-            input_patch = []
-            synth_patch = []
-            segm_patch = []
-
-            for j in range(self.ppd):
-                for i in range(self.ppd):
-                    if (i<1 and j<1):
-                        input_patch = input[:,j*dx_h:(j+1)*dx_h,i*dx_w:(i+1)*dx_w,:]
-                        synth_patch = synth[:,j*dx_h:(j+1)*dx_h,i*dx_w:(i+1)*dx_w,:]
-                        segm_patch = segm[:,j*dx_h:(j+1)*dx_h,i*dx_w:(i+1)*dx_w,:]
-                    else:
-                        input_patch=np.concatenate((input_patch,input[:,j*dx_h:(j+1)*dx_h,i*dx_w:(i+1)*dx_w,:]),axis=0)
-                        synth_patch=np.concatenate((synth_patch,synth[:,j*dx_h:(j+1)*dx_h,i*dx_w:(i+1)*dx_w,:]),axis=0)
-                        segm_patch=np.concatenate((segm_patch,segm[:,j*dx_h:(j+1)*dx_h,i*dx_w:(i+1)*dx_w,:]),axis=0)
-
-            data = {'labels': tf.to_float(input_patch), 'pos': tf.to_float(synth_patch), 'neg': tf.zeros_like(tf.to_float(synth_patch)),'pos_segm': tf.to_float(segm_patch), 'neg_segm': tf.zeros_like(tf.to_float(segm_patch)) }
+            data = {'labels': tf.to_float(realImages), 'pos': tf.to_float(synthImages), 'neg': tf.zeros_like(tf.to_float(synthImages)),'pos_segm': tf.to_float(segmImages), 'neg_segm': tf.zeros_like(tf.to_float(segmImages)) }
 
             iterator = tf.data.Dataset.from_tensor_slices(data)\
-                       .batch(self.ppd*self.ppd).make_one_shot_iterator()
+                       .batch(1).make_one_shot_iterator()
             handle = self.sess.run(iterator.string_handle())
 
-            output = self.sess.run(self.D, feed_dict={self.iter_handle: handle,
-                                                      self.train_flag: True })
 
-            if output.ndim == 2 and output.shape[1]==1:
-                output_temp = np.squeeze(output).reshape((self.ppd,self.ppd))
-            elif output.ndim == 3 and output.shape[1]==1 and output.shape[2]==1:
-                output_temp = np.squeeze(output).reshape((self.ppd,self.ppd))
-            else:
-                #  bs h  w  c
-                # [64,32,32,1]
-                # print(output.shape)
-                if output.ndim == 4:
+            for k in range(realImages.shape[0]):
+                output = self.sess.run(self.D, feed_dict={self.iter_handle: handle,
+                                                          self.train_flag: True })
+
+                if output.shape[-1] == 1:
                     output = np.squeeze(output, axis=-1)
-                output_temp = np.concatenate((output[0:self.ppd]),axis=1)
-                for l in range(1,self.ppd):
-                    temp_matrix = np.concatenate((output[self.ppd*l:self.ppd*(l+1)]),axis=1)
-                    output_temp = np.concatenate((output_temp,temp_matrix),axis=0)
+                if k == 0:
+                    print(output.shape)
+                    output_matrix = output
+                else:
+                    output_matrix = np.concatenate((output_matrix, output),axis=0)
 
-            if k == 0:
-                output_matrix = np.expand_dims(output_temp, axis=0)
-            else:
-                output_matrix = np.concatenate((output_matrix, np.expand_dims(output_temp, axis=0)),axis=0)
+            return output_matrix
 
-        return output_matrix
+        def transformFC(self, realImages, synthImages, segmImages):
+            """ Predict similarity between images """
+            counter = 1
+            dx_h = int(realImages.shape[1]/self.ppd)
+            dx_w = int(realImages.shape[1]/self.ppd)
+
+            # Check that a checkpoint directory is given, to load from
+            if not self.checkpoint_loaded:
+                assert(False, "No checkpoint loaded, load one at init of model.")
+
+            for k in range(realImages.shape[0]):
+                input = np.expand_dims(realImages[k,:,:,:],axis=0)
+                synth = np.expand_dims(synthImages[k,:,:,:],axis=0)
+                segm = np.expand_dims(segmImages[k,:,:,:],axis=0)
+
+                input_patch = []
+                synth_patch = []
+                segm_patch = []
+
+                for j in range(self.ppd):
+                    for i in range(self.ppd):
+                        if (i<1 and j<1):
+                            input_patch = input[:,j*dx_h:(j+1)*dx_h,i*dx_w:(i+1)*dx_w,:]
+                            synth_patch = synth[:,j*dx_h:(j+1)*dx_h,i*dx_w:(i+1)*dx_w,:]
+                            segm_patch = segm[:,j*dx_h:(j+1)*dx_h,i*dx_w:(i+1)*dx_w,:]
+                        else:
+                            input_patch=np.concatenate((input_patch,input[:,j*dx_h:(j+1)*dx_h,i*dx_w:(i+1)*dx_w,:]),axis=0)
+                            synth_patch=np.concatenate((synth_patch,synth[:,j*dx_h:(j+1)*dx_h,i*dx_w:(i+1)*dx_w,:]),axis=0)
+                            segm_patch=np.concatenate((segm_patch,segm[:,j*dx_h:(j+1)*dx_h,i*dx_w:(i+1)*dx_w,:]),axis=0)
+
+                data = {'labels': tf.to_float(input_patch), 'pos': tf.to_float(synth_patch), 'neg': tf.zeros_like(tf.to_float(synth_patch)),'pos_segm': tf.to_float(segm_patch), 'neg_segm': tf.zeros_like(tf.to_float(segm_patch)) }
+
+                iterator = tf.data.Dataset.from_tensor_slices(data)\
+                           .batch(self.ppd*self.ppd).make_one_shot_iterator()
+                handle = self.sess.run(iterator.string_handle())
+
+                output = self.sess.run(self.D, feed_dict={self.iter_handle: handle,
+                                                          self.train_flag: True })
+
+                # if output.ndim == 2 and output.shape[1]==1:
+                #     output_temp = np.squeeze(output).reshape((self.ppd,self.ppd))
+                # elif output.ndim == 3 and output.shape[1]==1 and output.shape[2]==1:
+                #     output_temp = np.squeeze(output).reshape((self.ppd,self.ppd))
+                # else:
+                #     #  bs h  w  c
+                #     # [64,32,32,1]
+                #     # print(output.shape)
+                #     if output.ndim == 4:
+                #         output = np.squeeze(output, axis=-1)
+                #     output_temp = np.concatenate((output[0:self.ppd]),axis=1)
+                #     for l in range(1,self.ppd):
+                #         temp_matrix = np.concatenate((output[self.ppd*l:self.ppd*(l+1)]),axis=1)
+                #         output_temp = np.concatenate((output_temp,temp_matrix),axis=0)
+
+                output_temp = np.squeeze(output).reshape((self.ppd,self.ppd))
+
+
+                if k == 0:
+                    output_matrix = np.expand_dims(output_temp, axis=0)
+                else:
+                    output_matrix = np.concatenate((output_matrix, np.expand_dims(output_temp, axis=0)),axis=0)
+
+            return output_matrix
+
+        if self.arch == 'arch9' or self.arch == 'arch10':
+            return transformFC(self, realImages, synthImages, segmImages)
+        else:
+            return transformConv(self, realImages, synthImages, segmImages)
 
     def save(self, checkpoint_dir, step, id):
         model_name = "diffDiscrim"+id+".model"
