@@ -119,3 +119,6 @@ def computePatchSSIM(realImgs, synthImgs, k):
                 ssimMat[i,y,x] = ssim(real_patch,synth_patch,data_range=255,multichannel=True)
 
     return ssimMat
+
+def ShannonEntropy(probs):
+    return -np.sum(probs*np.log2(probs), axis=-1)

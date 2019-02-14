@@ -9,4 +9,4 @@ notebooks/
 configs/
 .DS*
 *.yaml
-testAug.py
+output_tables.py
