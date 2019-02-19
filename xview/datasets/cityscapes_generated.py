@@ -76,43 +76,23 @@ class Cityscapes_generated(DataBaseclass):
         segm_list = glob.glob(os.path.join(path,prefix,"input_"+prefix+"*.png"))
         segm_list.sort()
 
-        wrong_list = fake_list.copy()
-        wrong_list.append(wrong_list.pop(0))
-        wrong_seg_list = segm_list.copy()
-        wrong_seg_list.append(wrong_seg_list.pop(0))
-        # TODO think about if this is still necessary
-        if is_validation and False:
-            target_full_list = target_list.copy()
-            fake_full_list = fake_list.copy()
-            wrong_full_list = wrong_list.copy()
-            segm_full_list = segm_list.copy()
-            wrong_segm_full_list = wrong_seg_list.copy()
+        false_list = glob.glob(os.path.join(path,prefix,str(self.id)+"_false*.png"))
+        false_seg_list = glob.glob(os.path.join(path,prefix,"input_false*.png"))
 
-            num = len(target_list)-2
-
-            for i in range(num):
-                target_full_list.extend(target_list)
-                fake_full_list.extend(fake_list)
-                segm_full_list.extend(segm_list)
-
-                wrong_list.append(wrong_list.pop(0))
-                wrong_full_list.extend(wrong_list)
-
-                wrong_seg_list.append(wrong_seg_list.pop(0))
-                wrong_segm_full_list.extend(wrong_seg_list)
-
-            for i in range(len(target_full_list)):
-                if fake_full_list[i].split('/')[-1].split('.')[0].split('n')[-1] is wrong_full_list[i].split('/')[-1].split('.')[0].split('n')[-1]:
-                    print(fake_full_list[i].split('/')[-1].split('.')[0].split('n')[-1],wrong_full_list[i].split('/')[-1].split('.')[0].split('n')[-1])
-                    raise ValueError('A image path in validation was the same for the positive and negative example')
-
-            path_dics = {'labels': target_full_list,'pos': fake_full_list,'neg': wrong_full_list, 'pos_segm': segm_full_list, 'neg_segm': wrong_segm_full_list}
-
-            return path_dics, len(target_full_list)
+        if len(false_list) == 0:
+            wrong_list = fake_list.copy()
+            wrong_list.append(wrong_list.pop(0))
+            wrong_seg_list = segm_list.copy()
+            wrong_seg_list.append(wrong_seg_list.pop(0))
         else:
-            path_dics = {'labels': target_list,'pos': fake_list,'neg': wrong_list, 'pos_segm': segm_list, 'neg_segm': wrong_seg_list}
+            false_list.sort()
+            false_seg_list.sort()
+            wrong_list = false_list
+            wrong_seg_list = false_seg_list
 
-            return path_dics, len(target_list)
+        path_dics = {'labels': target_list,'pos': fake_list,'neg': wrong_list, 'pos_segm': segm_list, 'neg_segm': wrong_seg_list}
+
+        return path_dics, len(target_list)
 
     def _load_data(self, image_path):
         blob = {}
@@ -133,7 +113,7 @@ class Cityscapes_generated(DataBaseclass):
 
         return blob
 
-    def _get_patch(self, blob, k):
+    def _get_patch(self, blob, k, seed):
         modalities = list(blob.keys())
         tmp_blob = {}
         pos_blob = {}
@@ -158,29 +138,29 @@ class Cityscapes_generated(DataBaseclass):
         # input("Press Enter to continue...")
         # if k==1:
         #     assert(False)
-        np.random.seed(42)
-        rng_seed = np.random.randint(3000)
-        pos_blob = augmentate(pos_blob, brightness=self.config['augmentation']['brightness'])
+        maxLoop = 20
+
+        pos_blob = augmentate(pos_blob, brightness=self.config['augmentation']['brightness'], seed=seed)
         tmp_blob['rgb'] = blob['neg']
         tmp_blob['neg_segm'] = blob['neg_segm']
 
-
         counter = 0
         while(True):
+            rng_seed = np.random.randint(maxLoop)
             return_blob = deepcopy(tmp_blob)
             return_blob = augmentate(return_blob,vflip=self.config['augmentation']['vflip'],
                                                  hflip=self.config['augmentation']['hflip'],
                                                  crop=[1, dx_h],
                                                  brightness=self.config['augmentation']['brightness'],
                                                  contrast=self.config['augmentation']['contrast'],
-                                                 gamma=self.config['augmentation']['gamma'])
+                                                 gamma=self.config['augmentation']['gamma'], seed=counter+1+seed)
 
             tmp = (return_blob['neg_segm'] == pos_segm)
             sameMask = np.logical_and(np.logical_and(tmp[:,:,0],tmp[:,:,1]),tmp[:,:,2])
 
-            if(np.sum(sameMask)/sameMask.size < 0.5 or counter is 20):
-                if(counter == 20):
-                    print("Reached counter 20 in finding neg patch loop")
+            if(np.sum(sameMask)/sameMask.size < 0.5 or counter is maxLoop):
+                if(counter == maxLoop):
+                    print("Reached counter %d in finding neg patch loop" % maxLoop)
                 break
             counter += 1
 
@@ -203,7 +183,7 @@ class Cityscapes_generated(DataBaseclass):
 
                 data = self._get_data(item, training_format=training_format)
                 for k in range(self.ppd*self.ppd):
-                    patch_data = self._get_patch(data,k)
+                    patch_data = self._get_patch(data,k,(k*len(setlist['labels'])+i))
 
                     yield patch_data
 
