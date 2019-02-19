@@ -548,6 +548,42 @@ class simArch(object):
 
     archs['arch19'] = arch19
 
+    def arch20(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
+        with tf.variable_scope(var_scope) as scope:
+            if reuse:
+                tf.get_variable_scope().reuse_variables()
+            else:
+                assert tf.get_variable_scope().reuse == False
+            h = ((image+1)/2)*0.79375
+            # 32x32x2
+            h0 = lrelu(conv2d(h, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv'))
+            # 32x32xself.df_dim
+            pool1 = max_pooling2d(h0, [3, 3], [2, 2], name='s_pool1', padding='same')
+            # 16x16xself.df_dim
+            h1 = lrelu(conv2d(pool1, self.df_dim*2, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv'))
+            # 16x16xself.df_dim*2
+            pool2 = max_pooling2d(h1, [3, 3], [2, 2], name='s_pool2', padding='same')
+            # 8x8xself.df_dim*2
+            h2 = lrelu(conv2d(pool2, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h2_conv'))
+            # 8x8xself.df_dim*4
+            pool3 = max_pooling2d(h2, [3, 3], [2, 2], name='s_pool3', padding='same')
+            # 4x4xself.df_dim*4
+
+            dh1_out_shape = tf.stack([tf.shape(image)[0], tf.to_int32(tf.shape(image)[1]/4), tf.to_int32(tf.shape(image)[2]/4), self.df_dim*2])
+            dh1 = lrelu(deconv2d(pool3,output_shape=dh1_out_shape, name='s_dh1', filters=self.df_dim*2))
+            # 8x8xself.df_dim*2
+            dh2_out_shape = tf.stack([tf.shape(image)[0], tf.to_int32(tf.shape(image)[1]/2), tf.to_int32(tf.shape(image)[2]/2), self.df_dim])
+            dh1 = tf.concat([dh1, pool2], 3)
+            dh2 = lrelu(deconv2d(dh1,output_shape=dh2_out_shape, name='s_dh2', filters=self.df_dim))
+            # 16x16x64
+            dh3_out_shape = tf.stack([tf.shape(image)[0], tf.shape(image)[1], tf.shape(image)[2], 1])
+            dh2 = tf.concat([dh2, pool1], 3)
+            dh3 = deconv2d(dh2,output_shape=dh3_out_shape, name='s_dh3', filters=1)
+            # 32x32x1
+
+            return tf.nn.sigmoid(dh3), dh3, params['entropy']
+
+    archs['arch20'] = arch20
 
     def __init__(self, df_dim=64, batch_momentum=0.9, arch='arch1', archs=archs):
         """
