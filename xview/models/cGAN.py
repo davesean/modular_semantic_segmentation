@@ -107,9 +107,9 @@ class pix2pix(object):
 
         self.build_model(training_batch['labels'], training_batch['rgb'])
         self.checkpoint = checkpoint
-        # if checkpoint is not None:
-        #     self.load(checkpoint)
-        #     self.checkpoint_loaded = True
+        if checkpoint is not None:
+            self.load(checkpoint)
+            self.checkpoint_loaded = True
 
     def build_model(self, input, target):
         self.real_B = preprocess(target)
