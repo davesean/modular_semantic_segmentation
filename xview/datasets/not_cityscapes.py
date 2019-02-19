@@ -20,7 +20,7 @@ class AddRandomObjects(DataBaseclass):
     _num_default_classes = 12
 
     def __init__(self, add_to_dataset='cityscapes', halfsize=False, animal='horse', augmentation=False,
-                 in_memory=False, **data_config):
+                 in_memory=False, out_images=True, **data_config):
         self.base_path = path.join(DATA_BASEPATH, 'pascalvoc')
         if not path.exists(self.base_path):
             message = 'ERROR: Path to PascalVOC dataset does not exist.'
@@ -50,6 +50,12 @@ class AddRandomObjects(DataBaseclass):
         self.config = config
         self.seed = 42
         np.random.seed(self.seed)
+        self.out_images = out_images
+
+        if out_images:
+            self.img_path = '/Volumes/Netti HD /Master Thesis/NotCityscapes'
+            self.img_counter = 0
+
 
         def _get_filenames(self):
 
@@ -165,6 +171,8 @@ class AddRandomObjects(DataBaseclass):
             mask = cv2.warpAffine(mask,M,(w,h),flags=cv2.INTER_NEAREST)
         h, w, _ = obj.shape
 
+
+
         # sample a random location where to put the object in the image
         img_h, img_w, _ = img.shape
         top = np.random.randint(img_h - h)
@@ -180,6 +188,13 @@ class AddRandomObjects(DataBaseclass):
         img_mod = np.dstack((np.where(mask,obj[:,:,0],img[:,:,0]),
                           np.where(mask,obj[:,:,1],img[:,:,1]),
                           np.where(mask,obj[:,:,2],img[:,:,2])))
+
+        if self.out_images:
+            cv2.imwrite(path.join(self.img_path,'obj'+str(self.img_counter)+'.png'), obj, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+            cv2.imwrite(path.join(self.img_path,'image'+str(self.img_counter)+'.png'), img_mod, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+            cv2.imwrite(path.join(self.img_path,'imageBefore'+str(self.img_counter)+'.png'), img, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+            cv2.imwrite(path.join(self.img_path,'mask'+str(self.img_counter)+'.png'), mask*255, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+            self.img_counter = self.img_counter+1
 
         blob = {
             'rgb': img_mod,
