@@ -98,8 +98,9 @@ def main(dataset, net_config, _run):
                         output_size=a.input_image_size, dataset_name=dataset['name'],
                         checkpoint_dir=output_dir, data=data,
                         data_desc=data.get_data_description(), momentum=a.batch_momentum,
-                        L1_lambda=int(a.l1_weight/a.gan_weight), gf_dim=a.ngf,
-                        df_dim=a.ndf,
+                        feature_matching=net_config['feature_matching'],
+                        L1_lambda=float(a.l1_weight/a.gan_weight), gf_dim=a.ngf,
+                        df_dim=a.ndf, use_grayscale=net_config['use_grayscale'],
                         noise_std_dev=a.noise_std_dev,
                         checkpoint=ckp, gen_type=net_config['type'])
 
