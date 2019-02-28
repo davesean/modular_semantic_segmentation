@@ -12,6 +12,7 @@ import random
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--path", help="path to folder with images")
+parser.add_argument("--n", help="path to folder with images")
 a = parser.parse_args()
 
 inception_path = fid.check_path_inception("/Users/David/Downloads/inception-2015-12-05") # download inception network
@@ -20,15 +21,17 @@ fid.create_inception_graph(inception_path)  # load the graph into the current TF
 
 def get_images(path,prefix):
     paths = glob.glob(os.path.join(path,prefix+"*.png"))
-    if prefix.split('_')[-1] == training:
-        num_samples = 500
+    test_load = cv2.imread(paths[0])
+    img_size = test_load.shape[-2]
+    c_channel = test_load.shape[-1]
+    if prefix.split('_')[-1] == "training":
+        num_samples = a.n
 
         random.seed(42)
         paths = random.sample(paths,num_samples)
-        images = np.zeros((num_samples,256,256,3))
     else:
         num_samples = len(paths)
-        images = np.zeros((num_samples,256,256,3))
+    images = np.zeros((num_samples,img_size,img_size,c_channel))
 
 
 
