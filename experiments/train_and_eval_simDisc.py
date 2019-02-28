@@ -155,8 +155,9 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
             cGAN_model = get_model('cGAN')
             modelGAN = cGAN_model(GAN_sess, checkpoint_dir=output_dir,
                             data_desc=dataGAN.get_data_description(),
+                            feature_matching=gan_config['feature_matching'],
                             checkpoint=os.path.join(a.EXP_OUT,str(a.checkpoint)),
-                            gen_type=gan_config['type'])
+                            gen_type=gan_config['type'],use_grayscale=gan_config['use_grayscale'])
         print("INFO: Generative model imported weights succesfully")
 
     Disc_graph = tf.Graph()
@@ -172,7 +173,8 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
             disc_checkpoint = os.path.join(a.EXP_OUT,str(disc_config['checkpoint']))
         modelDiff=disc_model(sess=sessD, checkpoint_dir=output_dir, pos_weight=disc_config['pos_weight'],
                              data=dataD, arch=disc_config['arch'], use_grayscale=disc_config['use_grayscale'],
-                             checkpoint=disc_checkpoint, batch_size=disc_config['batch_size'])
+                             checkpoint=disc_checkpoint, use_segm=disc_config['use_segm'],
+                             batch_size=disc_config['batch_size'])
 
         if disc_config['checkpoint'] is None:
             print("INFO: Begin training simDisc")
@@ -234,34 +236,44 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
 
         if flag_entropy and set is not 'posneg':
             entropy = ShannonEntropy(output_probs)
-            _run.info[set+'_meanVarEntropyOoD'] = [np.mean(entropy[masks.astype(bool)]),np.var(entropy[masks.astype(bool)],ddof=1)]
-            _run.info[set+'_meanVarEntropyID'] = [np.mean(entropy[~masks.astype(bool)]),np.var(entropy[~masks.astype(bool)],ddof=1)]
+            # _run.info[set+'_meanVarEntropyOoD'] = [np.mean(entropy[masks.astype(bool)]),np.var(entropy[masks.astype(bool)],ddof=1)]
+            # _run.info[set+'_meanVarEntropyID'] = [np.mean(entropy[~masks.astype(bool)]),np.var(entropy[~masks.astype(bool)],ddof=1)]
+            temp_iou = computeIOU(entropy, masks, thresholds)
+            temp_pr = computePRvalues(entropy, masks, thresholds)
+            _run.info[set+'_entropy_IOU'] = temp_iou
+            _run.info[set+'_entropy_PRvals'] = temp_pr
+            _run.info[set+'_entropy_F1score'] = 2*np.asarray(temp_pr[1])*np.asarray(temp_pr[2])/(np.asarray(temp_pr[1])+np.asarray(temp_pr[2]))
 
-        if output_mat and set is not 'measure':
+
+        k = masks.shape[0]
+
+        if output_mat and set is not 'posneg':
 
             if not os.path.exists(os.path.join(output_dir,set)):
                 os.makedirs(os.path.join(output_dir,set))
+            if set is 'measure':
+                k=25
 
             matrix_path = os.path.join(output_dir,set,"mskMat.npy")
-            np.save(matrix_path, masks)
+            np.save(matrix_path, masks[0:k, ...])
 
             matrix_path = os.path.join(output_dir,set,"simMat.npy")
-            np.save(matrix_path, simMat)
+            np.save(matrix_path, simMat[0:k, ...])
 
-            matrix_path = os.path.join(output_dir,set,"ssmMat.npy")
-            np.save(matrix_path, simMatSSIM)
+            # matrix_path = os.path.join(output_dir,set,"ssmMat.npy")
+            # np.save(matrix_path, simMatSSIM[0:k, ...])
 
             matrix_path = os.path.join(output_dir,set,"rgbMat.npy")
-            np.save(matrix_path, rgb_images)
+            np.save(matrix_path, rgb_images[0:k, ...])
 
             matrix_path = os.path.join(output_dir,set,"synMat.npy")
-            np.save(matrix_path, synth_images)
+            np.save(matrix_path, synth_images[0:k, ...])
 
             matrix_path = os.path.join(output_dir,set,"semMat.npy")
-            np.save(matrix_path, sem_seg_images)
+            np.save(matrix_path, sem_seg_images[0:k, ...])
 
             matrix_path = os.path.join(output_dir,set,"gtsMat.npy")
-            np.save(matrix_path, gt_seg_images)
+            np.save(matrix_path, gt_seg_images[0:k, ...])
 
             if flag_entropy:
                 matrix_path = os.path.join(output_dir,set,"entMat.npy")
