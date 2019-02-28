@@ -17,8 +17,10 @@ def add_noise(image, noise=0.1):
     with tf.name_scope("add_noise"):
         return image+tf.random_normal(shape=tf.shape(image), mean=0.0, stddev=noise, dtype=tf.float32)
 
-def preprocess(image):
+def preprocess(image, use_grayscale=False):
     with tf.name_scope("preprocess"):
+        if use_grayscale:
+            image = tf.image.rgb_to_grayscale(image[...,::-1])
         # [0, 255] => [-1, 1]
         return image/255 * 2 - 1
 def deprocess(image):
@@ -28,8 +30,8 @@ def deprocess(image):
 
 class pix2pix(object):
     def __init__(self, sess, image_size=256,
-                 batch_size=1, output_size=256,
-                 gf_dim=64, df_dim=64, L1_lambda=100,
+                 batch_size=1, output_size=256, feature_matching=False,
+                 gf_dim=64, df_dim=64, L1_lambda=100, use_grayscale=False,
                  input_c_dim=3, output_c_dim=3, dataset_name='cityscapes_GAN',
                  checkpoint_dir=None, data=None, data_desc=None, momentum=0.9,
                  noise_std_dev=0.0, checkpoint=None, gen_type="Unet"):
@@ -56,13 +58,18 @@ class pix2pix(object):
         self.batch_size = batch_size
         self.image_size = image_size
         self.output_size = output_size
+        self.use_grayscale = use_grayscale
+        self.feature_matching = feature_matching
 
         self.gf_dim = gf_dim
         self.df_dim = df_dim
         self.gen_type = gen_type
 
         self.input_c_dim = input_c_dim
-        self.output_c_dim = output_c_dim
+        if use_grayscale:
+            self.output_c_dim = 1
+        else:
+            self.output_c_dim = output_c_dim
 
         self.L1_lambda = L1_lambda
         self.noise_std_dev=noise_std_dev
@@ -112,7 +119,7 @@ class pix2pix(object):
             self.checkpoint_loaded = True
 
     def build_model(self, input, target):
-        self.real_B = preprocess(target)
+        self.real_B = preprocess(target,self.use_grayscale)
         self.real_A = preprocess(input)
 
         if self.gen_type == "Unet":
@@ -123,15 +130,19 @@ class pix2pix(object):
 
         self.real_AB = tf.concat([self.real_A, self.real_B], 3)
         self.fake_AB = tf.concat([self.real_A, self.fake_B], 3)
-        self.D, self.D_logits = self.discriminator(self.real_AB, reuse=False)
-        self.D_, self.D_logits_ = self.discriminator(self.fake_AB, reuse=True)
+        self.D, self.D_logits, self.D_feats = self.discriminator(self.real_AB, reuse=False)
+        self.D_, self.D_logits_, self.D_feats_ = self.discriminator(self.fake_AB, reuse=True)
 
         smoothing = 0.9
 
         self.d_loss_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits, labels=tf.ones_like(self.D)*smoothing))
         self.d_loss_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits_, labels=tf.zeros_like(self.D_)))
-        self.g_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits_, labels=tf.ones_like(self.D_))) \
-                        + self.L1_lambda * tf.reduce_mean(tf.abs(self.real_B - self.fake_B)) \
+        if self.feature_matching:
+            self.g_loss = self.L1_lambda*tf.reduce_mean(tf.abs(self.D_feats - self.D_feats_)) \
+                            + (1-self.L1_lambda) * tf.reduce_mean(tf.abs(self.real_B - self.fake_B))
+        else:
+            self.g_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits_, labels=tf.ones_like(self.D_))) \
+                            + self.L1_lambda * tf.reduce_mean(tf.abs(self.real_B - self.fake_B))
 
         self.d_loss = self.d_loss_real + self.d_loss_fake
 
@@ -173,9 +184,7 @@ class pix2pix(object):
             self.fake_B_sum, self.d_loss_fake_sum, self.g_loss_sum, self.d_sum, self.d_loss_real_sum, self.d_loss_sum])
         self.writer = tf.summary.FileWriter(self.checkpoint_dir, self.sess.graph)
 
-        if self.checkpoint_loaded:
-            print(" [*] Already loaded")
-        elif args.checkpoint is not None and self.load(os.path.join(args.EXP_OUT,str(args.checkpoint))):
+        if args.checkpoint is not None and self.load(os.path.join(args.EXP_OUT,str(args.checkpoint))):
             print(" [*] Load SUCCESS")
         else:
             print(" [!] Load failed...")
@@ -404,7 +413,7 @@ class pix2pix(object):
             h4 = conv2d(h3, 1, d_h=1, d_w=1, name='d_h4_conv',pad="VALID")
             # h4 is (30 x 30 x 1)
 
-            return tf.nn.sigmoid(h4), h4
+            return tf.nn.sigmoid(h4), h4, h3
 
     def generator(self, image, y=None):
         with tf.variable_scope("generator") as scope:
