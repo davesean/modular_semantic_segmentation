@@ -24,10 +24,11 @@ def preprocess(image, grayscale=False):
 #         return ((image + 1) / 2)*255
 
 class DiffDiscrim(object):
-    def __init__(self, sess, image_size=256, seed=42,
+    def __init__(self, sess, image_size=256, seed=42, use_segm=False,
                  batch_size=64, df_dim=64, ppd=8, pos_weight=1, use_grayscale=False,
                  input_c_dim=3, is_training=True, arch='arch1', batch_norm=False,
-                 checkpoint_dir=None, data=None, momentum=0.9, checkpoint=None):
+                 checkpoint_dir=None, data=None, momentum=0.9, checkpoint=None,
+                 feature_extractor=None):
         """
         Args:
             sess: TensorFlow session
@@ -46,19 +47,19 @@ class DiffDiscrim(object):
         self.sess = sess
         self.seed = seed
         self.ppd = 8
-        self.is_grayscale = (input_c_dim == 1)
         self.batch_size = batch_size
         self.image_size = image_size
         self.batch_norm = batch_norm
         self.pos_weight = pos_weight
         self.use_grayscale = use_grayscale
+        self.use_segm = use_segm
+        self.feature_extractor = feature_extractor
 
-        self.input_c_dim = input_c_dim
         self.df_dim = df_dim
 
         self.batch_momentum = momentum
         self.arch = arch
-        self.archDisc = simArch(df_dim=df_dim, arch=arch)
+        self.archDisc = simArch(df_dim=df_dim, arch=arch, ckpt=self.feature_extractor)
 
         self.data = data
         self.checkpoint_dir = checkpoint_dir
@@ -76,14 +77,114 @@ class DiffDiscrim(object):
         iterator = tf.data.Iterator.from_string_handle(
             self.iter_handle, *data_description)
         training_batch = iterator.get_next()
-
-        self.build_model(training_batch['labels'],training_batch['pos'],training_batch['neg'],training_batch['pos_segm'],training_batch['neg_segm'])
+        if arch[:4] == 'arch':
+            self.build_model_arch(training_batch['labels'],training_batch['pos'],training_batch['neg'],training_batch['pos_segm'],training_batch['neg_segm'])
+        else:
+            self.build_model_feat(training_batch['labels'],training_batch['pos'],training_batch['neg'],training_batch['pos_segm'],training_batch['neg_segm'])
 
         if checkpoint is not None and not(checkpoint.split('/')[-1] == "None"):
             self.load(checkpoint)
             self.checkpoint_loaded = True
 
-    def build_model(self, target, pos, neg, pos_segm, neg_segm):
+
+    def build_model_feat(self, target, pos, neg, pos_segm, neg_segm):
+
+        def lrelu(x, leak=0.2, name="lrelu"):
+          return tf.maximum(x, leak*x)
+        def dense(input_, output_size, input_size, num_channels, name="dense", reuse=False, stddev=0.02, bias_start=0.0):
+            shape = input_size * input_size * num_channels
+            with tf.variable_scope(name, reuse=reuse):
+                matrix = tf.get_variable("Matrix", [shape, output_size], tf.float32,
+                                         tf.random_normal_initializer(stddev=stddev))
+                bias = tf.get_variable("bias", [output_size],
+                    initializer=tf.constant_initializer(bias_start))
+                return tf.matmul(tf.layers.flatten(input_), matrix) + bias
+
+        tf.set_random_seed(self.seed)
+        self.target_placeholder = preprocess(target)
+        self.pos_placeholder = preprocess(pos)
+        self.neg_placeholder = preprocess(neg)
+        self.pos_segm_placeholder = preprocess(pos_segm)
+        self.neg_segm_placeholder = preprocess(neg_segm)
+        self.train_flag = tf.placeholder(tf.bool, name="Train_flag")
+
+        # Feature Extractor
+        _, self.Feature_R, _ = self.archDisc.get_output(image=self.target_placeholder,
+                                                         reuse=True,
+                                                         is_training=self.train_flag,
+                                                         bn=self.batch_norm,
+                                                         bs=self.batch_size,
+                                                         image_semSeg=self.pos_segm_placeholder)
+        _, self.Feature_P, _ = self.archDisc.get_output(image=self.pos_placeholder,
+                                                           reuse=True,
+                                                           is_training=self.train_flag,
+                                                           bn=self.batch_norm,
+                                                           bs=self.batch_size,
+                                                           image_semSeg=self.pos_segm_placeholder)
+        _, self.Feature_N, _ = self.archDisc.get_output(image=self.neg_placeholder,
+                                                           reuse=True,
+                                                           is_training=self.train_flag,
+                                                           bn=self.batch_norm,
+                                                           bs=self.batch_size,
+                                                           image_semSeg=self.neg_segm_placeholder)
+
+
+        PosExample = (tf.concat([self.Feature_R, self.Feature_P], 3))
+        NegExample = (tf.concat([self.Feature_R, self.Feature_N], 3))
+        # (32x 32 x (64*4)x2) for full image
+        # (4 x 4 x (64*4)x2) for patches (256/8->32)
+
+
+
+        # PosExample = tf.Print(PosExample, [tf.reduce_max(PosExample), tf.reduce_max(NegExample), tf.reduce_min(PosExample), tf.reduce_min(NegExample)])
+
+        posFlat = tf.layers.flatten(PosExample)
+        negFlat = tf.layers.flatten(NegExample)
+
+        interm_nodes = 1024
+        #Feat 2
+        # # 8x8x64x4x2
+
+        if self.arch[:5] == 'feat1':
+            inp_nodes=int(self.df_dim*8)
+        elif self.arch == 'feat2':
+            inp_nodes=int(self.df_dim*32)
+
+
+        dense1_pos = lrelu(dense(posFlat, interm_nodes, 4, inp_nodes, name="s_dense1"))
+        dense2_pos = lrelu(dense(dense1_pos, interm_nodes, 2, int(interm_nodes/4), name="s_dense2"))
+        dense3_pos = dense(dense2_pos, 1, 2, int(interm_nodes/4), name="s_dense3")
+
+        dense1_neg = lrelu(dense(negFlat, interm_nodes, 4, inp_nodes, name="s_dense1", reuse=True))
+        dense2_neg = lrelu(dense(dense1_neg, interm_nodes, 2, int(interm_nodes/4), name="s_dense2", reuse=True))
+        dense3_neg = dense(dense2_neg, 1, 2, int(interm_nodes/4), name="s_dense3", reuse=True)
+
+        self.D = tf.nn.sigmoid(dense3_pos)
+        self.D_ = tf.nn.sigmoid(dense3_neg)
+
+        self.d_loss_pos = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=dense3_pos, labels=tf.zeros_like(dense3_pos)))
+        self.d_loss_neg = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=dense3_neg, labels=tf.ones_like(dense3_neg)))
+
+        self.d_loss = self.pos_weight*self.d_loss_pos + self.d_loss_neg
+        self.d_sum = tf.summary.histogram("d", self.D)
+        self.d__sum = tf.summary.histogram("d_", self.D_)
+        self.target_sum = tf.summary.image("Target", target[...,::-1])
+        self.positiv_sum = tf.summary.image("Positiv", pos[...,::-1])
+        self.negativ_sum = tf.summary.image("Negativ", neg[...,::-1])
+
+        self.d_loss_pos_sum = tf.summary.scalar("d_loss_pos", self.d_loss_pos)
+        self.d_loss_neg_sum = tf.summary.scalar("d_loss_neg", self.d_loss_neg)
+
+        self.d_loss_sum = tf.summary.scalar("d_loss", self.d_loss)
+
+        t_vars = tf.trainable_variables()
+
+        self.d_vars = [var for var in t_vars if 's_' in var.name]
+
+        self.saver = tf.train.Saver()
+
+
+    def build_model_arch(self, target, pos, neg, pos_segm, neg_segm):
         tf.set_random_seed(self.seed)
         self.target_placeholder = preprocess(target,self.use_grayscale)
         self.pos_placeholder = preprocess(pos,self.use_grayscale)
@@ -92,11 +193,12 @@ class DiffDiscrim(object):
         self.neg_segm_placeholder = preprocess(neg_segm)
         self.train_flag = tf.placeholder(tf.bool, name="Train_flag")
 
-        # PosExample = tf.concat([self.target_placeholder, self.pos_placeholder, self.pos_segm_placeholder], 3)
-        # NegExample = tf.concat([self.target_placeholder, self.neg_placeholder, self.neg_segm_placeholder], 3)
-
-        PosExample = tf.concat([self.target_placeholder, self.pos_placeholder], 3)
-        NegExample = tf.concat([self.target_placeholder, self.neg_placeholder], 3)
+        if self.use_segm:
+            PosExample = tf.concat([self.target_placeholder, self.pos_placeholder, self.pos_segm_placeholder], 3)
+            NegExample = tf.concat([self.target_placeholder, self.neg_placeholder, self.neg_segm_placeholder], 3)
+        else:
+            PosExample = tf.concat([self.target_placeholder, self.pos_placeholder], 3)
+            NegExample = tf.concat([self.target_placeholder, self.neg_placeholder], 3)
 
         # self.D, self.D_logits = self.discriminator(PosExample)
         # self.D_, self.D_logits_ = self.discriminator(NegExample,reuse=True)
@@ -400,7 +502,7 @@ class DiffDiscrim(object):
 
             return output_matrix
 
-        if self.arch == 'arch9' or self.arch == 'arch10':
+        if self.arch == 'arch9' or self.arch == 'arch10' or  self.arch[:4] == 'feat':
             return transformFC(self, realImages, synthImages, segmImages)
         else:
             return transformConv(self, realImages, synthImages, segmImages)
