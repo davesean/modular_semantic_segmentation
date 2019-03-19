@@ -140,7 +140,10 @@ class Cityscapes_generated(DataBaseclass):
         #     assert(False)
         maxLoop = 20
 
-        pos_blob = augmentate(pos_blob, brightness=self.config['augmentation']['brightness'], seed=seed)
+        pos_blob = augmentate(pos_blob, brightness=self.config['augmentation']['brightness'],
+                                        contrast=self.config['augmentation']['contrast'],
+                                        gamma=self.config['augmentation']['gamma'],
+                                        seed=seed)
         tmp_blob['rgb'] = blob['neg']
         tmp_blob['neg_segm'] = blob['neg_segm']
 
