@@ -174,7 +174,7 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
         modelDiff=disc_model(sess=sessD, checkpoint_dir=output_dir, pos_weight=disc_config['pos_weight'],
                              data=dataD, arch=disc_config['arch'], use_grayscale=disc_config['use_grayscale'],
                              checkpoint=disc_checkpoint, use_segm=disc_config['use_segm'],
-                             batch_size=disc_config['batch_size'])
+                             batch_size=disc_config['batch_size'],feature_extractor=os.path.join(a.EXP_OUT,str(a.checkpoint)))
 
         if disc_config['checkpoint'] is None:
             print("INFO: Begin training simDisc")
