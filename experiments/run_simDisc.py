@@ -76,12 +76,15 @@ def main(dataset, net_config, _run):
         ckp=None
         if net_config['checkpoint'] is not None:
             ckp = os.path.join(a.EXP_OUT,str(net_config['checkpoint']))
+        if net_config['feature_extractor'] is not None:
+            fe_ckp = os.path.join(a.EXP_OUT,str(net_config['feature_extractor']))
+
         model=disc_model(sess=sess, image_size=a.input_image_size,
                      batch_size=a.batch_size, df_dim=a.ndf,
                      input_c_dim=3,
                      checkpoint_dir=output_dir, data=data,
                      momentum=a.batch_momentum, arch=net_config['arch'],
-                     checkpoint=ckp)
+                     checkpoint=ckp, feature_extractor=fe_ckp)
         if a.mode == "train":
             tmp = model.train(a)
             _run.info['predictions'] = tmp

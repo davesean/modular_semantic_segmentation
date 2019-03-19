@@ -22,7 +22,7 @@ def computePRvalues(simMat, mskMat, threshs):
 
             if np.max(mask_sim) > 1 or np.isnan(np.max(mask_sim)):
                 tmp = np.ma.array(mask_sim, mask=np.isnan(mask_sim))
-                mask_sim = (mask_sim-np.min(tmp))/np.max(tmp)
+                mask_sim = (mask_sim-np.min(tmp))/(np.max(tmp)-np.min(tmp))
 
             if np.sum(mask_gt) == 0:
                 mask_gt = (~mask_gt.astype(bool)).astype(int)
@@ -137,41 +137,6 @@ def computeIOU(simMat, mskMat, threshs):
         OoD[t] = avgOoD/(simMat.shape[0])
 
     return thresholds, iou, OoD
-
-# def computeIOU(simMat, mskMat, threshs):
-#     thresholds = threshs[:]
-#
-#     # thresholds = [0.2,0.4,0.6,0.8]
-#     iou = np.zeros((len(thresholds),1))
-#     OoD = np.zeros((len(thresholds),1))
-#
-#     for t,thresh in enumerate(thresholds):
-#         avgIOU = 0
-#         avgOoD = 0
-#         for k in range(simMat.shape[0]):
-#             mask_gt = mskMat[k,:,:]
-#             mask_sim = simMat[k,:,:]
-#             if np.sum(mask_gt) == 0:
-#                 mask_gt = (~mask_gt.astype(bool)).astype(int)
-#                 mask_sim = 1-mask_sim
-#                 thresholds.reverse()
-#
-#             avgOoD += np.sum(mask_gt)/(mskMat.shape[1]*mskMat.shape[2])
-#             if mask_sim.shape[1] < mskMat.shape[1]:
-#                 mask_sim = cv2.resize(mask_sim,(mskMat.shape[1],mskMat.shape[2]),interpolation=cv2.INTER_NEAREST)
-#
-#             simMask = (mask_sim>thresh).astype(int)
-#
-#             # inter = np.sum(simMask[mask_gt.astype(bool)])
-#             inter = np.sum(mask_gt[simMask.astype(bool)])
-#             union = np.sum(((simMask+mask_gt) > 0).astype(int))
-#             if union > 0:
-#                 avgIOU +=inter/union
-#             else:
-#                 avgIOU += 1 # TODO check about this
-#         iou[t] = avgIOU/(simMat.shape[0])
-#         OoD[t] = avgOoD/(simMat.shape[0])
-#     return thresholds, iou, OoD
 
 def computePatchSSIM(realImgs, synthImgs, k):
     num_samples = realImgs.shape[0]
