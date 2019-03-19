@@ -122,7 +122,7 @@ def instance_norm(x, epsilon=1e-5, scope='instance_norm'):
     TYPE
         Description
     """
-    with tf.variable_scope(scope):
+    with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
         mean, var = tf.nn.moments(x, [1, 2], keep_dims=True)
         scale = tf.get_variable(
             name='scale',
