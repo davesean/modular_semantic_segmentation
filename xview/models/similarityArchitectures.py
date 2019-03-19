@@ -2,6 +2,8 @@ import tensorflow as tf
 from .vgg16 import vgg16
 from tensorflow.python.layers.layers import max_pooling2d
 from xview.models.cGAN_ops import residual_block, deconv2d, instance_norm
+import os
+from glob import glob
 
 class batch_norm(object):
     def __init__(self, epsilon=1e-5, momentum = 0.9, name="batch_norm"):
@@ -17,7 +19,7 @@ def lrelu(x, leak=0.2, name="lrelu"):
 def conv2d(input_, output_dim,
            k_h=4, k_w=4, d_h=2, d_w=2, stddev=0.02,
            name="conv2d",pad="SAME"):
-    with tf.variable_scope(name):
+    with tf.variable_scope(name, reuse=tf.AUTO_REUSE):
         w = tf.get_variable('w', [k_h, k_w, input_.get_shape()[-1], output_dim],
                             initializer=tf.truncated_normal_initializer(stddev=stddev))
         if pad=="VALID":
@@ -32,6 +34,17 @@ def conv2d(input_, output_dim,
         conv = tf.reshape(tf.nn.bias_add(conv, biases), tf.shape(conv))
 
         return conv
+
+def conv2d_from_tensors(input_, w, bias, d_h=2, d_w=2, pad="SAME"):
+        conv = tf.nn.conv2d(input_, w, strides=[1, d_h, d_w, 1], padding=pad)
+        conv = tf.reshape(tf.nn.bias_add(conv, bias), tf.shape(conv))
+
+        return conv
+def instance_norm_from_tensors(x,scale,offset, epsilon=1e-5):
+    mean, var = tf.nn.moments(x, [1, 2], keep_dims=True)
+    out = scale * tf.div(x - mean, tf.sqrt(var + epsilon)) + offset
+    return out
+
 def maxPool2d(input_,
            k_h=4, k_w=4, d_h=2, d_w=2,
            name="maxpool2d",pad="SAME"):
@@ -70,6 +83,48 @@ class simArch(object):
     archs = {
         'arch1': arch1
     }
+
+    def arch1A(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
+        # image is 256 x 256 x (input_c_dim + input_c_dim)
+        with tf.variable_scope(var_scope) as scope:
+            if reuse:
+                tf.get_variable_scope().reuse_variables()
+            else:
+                assert tf.get_variable_scope().reuse == False
+            image = ((image+1)/2)
+            h0 = lrelu(conv2d(image, self.df_dim, k_h=2, k_w=2, d_h=2, d_w=2, name='s_h0_conv'))
+            # h0 is (128 x 128 x self.df_dim)
+            h1 = lrelu(conv2d(h0, self.df_dim, k_h=2, k_w=2, d_h=2, d_w=2, name='s_h1_conv'))
+            h2 = lrelu(conv2d(h1, self.df_dim*2, k_h=2, k_w=2, d_h=2, d_w=2, name='s_h2_conv'))
+            h3 = lrelu(conv2d(h2, self.df_dim*2, k_h=2, k_w=2, d_h=2, d_w=2, name='s_h3_conv'))
+
+            h4 = conv2d(h3, 1, k_h=2, k_w=2, d_h=2, d_w=2, name='s_h4_conv')
+            # h4 is (8 x 8 x 1)
+
+            return tf.nn.sigmoid(h4), h4, params['entropy']
+
+    archs['arch1A'] = arch1A
+
+    def arch1B(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
+        # image is 256 x 256 x (input_c_dim + input_c_dim)
+        with tf.variable_scope(var_scope) as scope:
+            if reuse:
+                tf.get_variable_scope().reuse_variables()
+            else:
+                assert tf.get_variable_scope().reuse == False
+            image = ((image+1)/2)
+            h0 = lrelu(conv2d(image, self.df_dim, k_h=3, k_w=3, d_h=2, d_w=2, name='s_h0_conv', pad="VALID"))
+            # h0 is (128 x 128 x self.df_dim)
+            h1 = lrelu(conv2d(h0, self.df_dim, k_h=3, k_w=3, d_h=2, d_w=2, name='s_h1_conv', pad="VALID"))
+            h2 = lrelu(conv2d(h1, self.df_dim*2, k_h=3, k_w=3, d_h=2, d_w=2, name='s_h2_conv', pad="VALID"))
+
+            h4 = conv2d(h2, 1, k_h=3, k_w=3, d_h=2, d_w=2, name='s_h4_conv', pad="VALID")
+            # h4 is (8 x 8 x 1)
+
+            return tf.nn.sigmoid(h4), h4, params['entropy']
+
+    archs['arch1B'] = arch1B
+
 
     def arch2(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
         # image is 256 x 256 x (input_c_dim + input_c_dim)
@@ -208,18 +263,18 @@ class simArch(object):
                 assert tf.get_variable_scope().reuse == False
             h = ((image+1)/2)*0.79375
 
-            h0 = lrelu(conv2d(h, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv'))
-            h1 = lrelu(conv2d(h0, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv'))
+            h0 = lrelu(conv2d(h, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv'))
+            h1 = lrelu(conv2d(h0, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv'))
             pool1 = max_pooling2d(h1, [2, 2], [2, 2], name='s_pool1')
-            h2 = lrelu(conv2d(pool1, 128, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h2_conv'))
-            h3 = lrelu(conv2d(h2, 128, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h3_conv'))
+            h2 = lrelu(conv2d(pool1, self.df_dim*2, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h2_conv'))
+            h3 = lrelu(conv2d(h2, self.df_dim*2, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h3_conv'))
             pool2 = max_pooling2d(h3, [2, 2], [2, 2], name='s_pool2')
-            h4 = lrelu(conv2d(pool2, 256, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h4_conv'))
+            h4 = lrelu(conv2d(pool2, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h4_conv'))
             # 8*8*256
             # flat = tf.layers.flatten(h4,name='s_flatten')
-            d1 = lrelu(dense(h4, input_size=8, output_size=1024, num_channels=256,
+            d1 = lrelu(dense(h4, input_size=8, output_size=self.df_dim*16, num_channels=self.df_dim*4,
                         reuse=reuse, name='s_dense_out1'))
-            d3 = dense(d1, input_size=2, output_size=1, num_channels=256,
+            d3 = dense(d1, input_size=4, output_size=1, num_channels=self.df_dim,
                         reuse=reuse, name='s_dense_out3')
             # return tf.nn.softmax(d3), d3, 'softmax'
             return tf.nn.sigmoid(d3), d3, params['entropy']
@@ -299,22 +354,15 @@ class simArch(object):
             bp = 11
             h = tf.pad(h, [[0, 0], [bp, bp], [bp, bp], [0, 0]], "REFLECT")
 
-            h0 = lrelu(conv2d(h, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv',pad="VALID_NOPAD"))
-            h1 = lrelu(conv2d(h0, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv',pad="VALID_NOPAD"))
+            h0 = lrelu(conv2d(h, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv',pad="VALID_NOPAD"))
+            h1 = lrelu(conv2d(h0, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv',pad="VALID_NOPAD"))
             pool1 = max_pooling2d(h1, [2, 2], [2, 2], name='s_pool1',padding='VALID')
-            h2 = lrelu(conv2d(pool1, 128, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h2_conv',pad="VALID_NOPAD"))
-            h3 = lrelu(conv2d(h2, 128, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h3_conv',pad="VALID_NOPAD"))
+            h2 = lrelu(conv2d(pool1, self.df_dim*2, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h2_conv',pad="VALID_NOPAD"))
+            h3 = lrelu(conv2d(h2, self.df_dim*2, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h3_conv',pad="VALID_NOPAD"))
             pool2 = max_pooling2d(h3, [2, 2], [2, 2], name='s_pool2',padding='VALID')
-            h4 = lrelu(conv2d(pool2, 256, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h4_conv',pad="VALID_NOPAD"))
+            h4 = lrelu(conv2d(pool2, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h4_conv',pad="VALID_NOPAD"))
             # # 8x8x256
 
-            # h5 = lrelu(conv2d(h4, 256, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h5_conv'))
-            # h6 = lrelu(conv2d(h5, 256, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h6_conv'))
-            # pool3 = max_pooling2d(h6, [2, 2], [2, 2], name='s_pool2')
-            # h7 = lrelu(conv2d(pool3, 256, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h7_conv'))
-
-            # # 4x4x256
-            # dh1 = lrelu(deconv2d(h7,output_shape=[params['batch_size'], 8, 8, 128], name='s_dh1'))
             # 8x8x128
             dh2_out_shape = tf.stack([tf.shape(image)[0], tf.to_int32(tf.shape(image)[1]/2), tf.to_int32(tf.shape(image)[2]/2), self.df_dim])
             dh2 = lrelu(deconv2d(h4,output_shape=dh2_out_shape, name='s_dh2', filters=self.df_dim))
@@ -337,13 +385,13 @@ class simArch(object):
             bp = 11
             h = tf.pad(h, [[0, 0], [bp, bp], [bp, bp], [0, 0]], "REFLECT")
 
-            h0 = lrelu(conv2d(h, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv',pad="VALID_NOPAD"))
-            h1 = lrelu(conv2d(h0, 64, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv',pad="VALID_NOPAD"))
+            h0 = lrelu(conv2d(h, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv',pad="VALID_NOPAD"))
+            h1 = lrelu(conv2d(h0, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv',pad="VALID_NOPAD"))
             pool1 = max_pooling2d(h1, [2, 2], [2, 2], name='s_pool1',padding='VALID')
-            h2 = lrelu(conv2d(pool1, 128, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h2_conv',pad="VALID_NOPAD"))
-            h3 = lrelu(conv2d(h2, 128, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h3_conv',pad="VALID_NOPAD"))
+            h2 = lrelu(conv2d(pool1, self.df_dim*2, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h2_conv',pad="VALID_NOPAD"))
+            h3 = lrelu(conv2d(h2, self.df_dim*2, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h3_conv',pad="VALID_NOPAD"))
             pool2 = max_pooling2d(h3, [2, 2], [2, 2], name='s_pool2',padding='VALID')
-            h4 = lrelu(conv2d(pool2, 256, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h4_conv',pad="VALID_NOPAD"))
+            h4 = lrelu(conv2d(pool2, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h4_conv',pad="VALID_NOPAD"))
             h4 = conv2d(h4, 1, k_h=1, k_w=1, d_h=1, d_w=1, name='s_h5_conv')
 
             out = tf.image.resize_images(h4, [tf.shape(image)[1], tf.shape(image)[2]])
@@ -524,7 +572,7 @@ class simArch(object):
                 tf.get_variable_scope().reuse_variables()
             else:
                 assert tf.get_variable_scope().reuse == False
-            h = ((image+1)/2)*0.79375
+            h = ((image+1)/2)
             # 32x32x6
             h0 = lrelu(conv2d(h, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv'))
             h1 = lrelu(conv2d(h0, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv'))
@@ -585,7 +633,88 @@ class simArch(object):
 
     archs['arch20'] = arch20
 
-    def __init__(self, df_dim=64, batch_momentum=0.9, arch='arch1', archs=archs):
+    # def feat1(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
+    #     with tf.variable_scope("discriminator") as scope:
+    #
+    #         input = tf.concat([params['sem_seg'], image], 3)
+    #
+    #         h0 = lrelu(conv2d(input, self.df_dim, name='d_h0_conv'))
+    #         # h0 is (128 x 128 x self.df_dim)
+    #         h1 = lrelu(instance_norm(conv2d(h0, self.df_dim*2, name='d_h1_conv'), scope="d_h1_IN"))
+    #         # h1 is (64 x 64 x self.df_dim*2)
+    #         h2 = lrelu(instance_norm(conv2d(h1, self.df_dim*4, name='d_h2_conv'), scope="d_h2_IN"))
+    #         # h2 is (32x 32 x self.df_dim*4)
+    #
+    #         return tf.nn.sigmoid(h2), h2, params['entropy']
+    #
+    # archs['feat1'] = feat1
+
+    def feat1(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
+        with tf.variable_scope(var_scope) as scope:
+            if reuse:
+                tf.get_variable_scope().reuse_variables()
+            else:
+                assert tf.get_variable_scope().reuse == False
+
+            input = tf.concat([params['sem_seg'], image], 3)
+
+            h0 = lrelu(conv2d_from_tensors(input, self.conv_dict['w0'], self.conv_dict['b0']))
+            # h0 is (128 x 128 x self.df_dim)
+            h1 = lrelu(instance_norm(conv2d_from_tensors(h0, self.conv_dict['w1'], self.conv_dict['b1']), scope="s_h1_IN"))
+            # h1 is (64 x 64 x self.df_dim*2)
+            h2 = lrelu(instance_norm(conv2d_from_tensors(h1, self.conv_dict['w2'], self.conv_dict['b2']), scope="s_h2_IN"))
+            # h2 is (32x 32 x self.df_dim*4)
+
+            return tf.nn.sigmoid(h2), h2, params['entropy']
+
+    archs['feat1'] = feat1
+
+    def feat1A(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
+        with tf.variable_scope(var_scope) as scope:
+            if reuse:
+                tf.get_variable_scope().reuse_variables()
+            else:
+                assert tf.get_variable_scope().reuse == False
+
+            input = tf.concat([params['sem_seg'], image], 3)
+
+            h0 = lrelu(conv2d_from_tensors(input, self.conv_dict['w0'], self.conv_dict['b0']))
+            # h0 is (128 x 128 x self.df_dim)
+            h1 = lrelu(instance_norm_from_tensors(conv2d_from_tensors(h0, self.conv_dict['w1'], self.conv_dict['b1']), scale=self.conv_dict['s1'], offset=self.conv_dict['o1']))
+            # h1 is (64 x 64 x self.df_dim*2)
+            h2 = lrelu(instance_norm_from_tensors(conv2d_from_tensors(h1, self.conv_dict['w2'], self.conv_dict['b2']), scale=self.conv_dict['s2'], offset=self.conv_dict['o2']))
+            # h2 is (32x 32 x self.df_dim*4)
+
+            return tf.nn.sigmoid(h2), h2, params['entropy']
+
+    archs['feat1A'] = feat1A
+
+    def feat2(self, image, params, y=None, reuse=False, is_training=True, var_scope="sim_disc"):
+        with tf.variable_scope(var_scope) as scope:
+            if reuse:
+                tf.get_variable_scope().reuse_variables()
+            else:
+                assert tf.get_variable_scope().reuse == False
+            # image = tf.concat([image, params['sem_seg']], 3)
+
+            h = ((image+1)/2)*0.79375
+            bp = 11
+            h = tf.pad(h, [[0, 0], [bp, bp], [bp, bp], [0, 0]], "REFLECT")
+
+            h0 = lrelu(conv2d(h, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h0_conv',pad="VALID_NOPAD"))
+            h1 = lrelu(conv2d(h0, self.df_dim, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h1_conv',pad="VALID_NOPAD"))
+            pool1 = max_pooling2d(h1, [2, 2], [2, 2], name='s_pool1',padding='VALID')
+            h2 = lrelu(conv2d(pool1, self.df_dim*2, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h2_conv',pad="VALID_NOPAD"))
+            h3 = lrelu(conv2d(h2, self.df_dim*2, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h3_conv',pad="VALID_NOPAD"))
+            pool2 = max_pooling2d(h3, [2, 2], [2, 2], name='s_pool2',padding='VALID')
+            h4 = lrelu(conv2d(pool2, self.df_dim*4, k_h=3, k_w=3, d_h=1, d_w=1, name='s_h4_conv',pad="VALID_NOPAD"))
+            # # 8x8x256
+
+            return tf.nn.sigmoid(h4), h4, params['entropy']
+
+    archs['feat2'] = feat2
+
+    def __init__(self, df_dim=64, batch_momentum=0.9, arch='arch1', archs=archs, ckpt=None):
         """
         Args:
             df_dim: Number of filters in the first layer. Doubled with each following layer.
@@ -597,9 +726,39 @@ class simArch(object):
         self.batch_momentum = batch_momentum
         self.arch = arch
         self.archs = archs
+        self.ckpt = ckpt
+        self.conv_dict={}
+
+        if self.ckpt is not None and self.arch == 'feat1' or self.arch == 'feat1A':
+            checkpoint = tf.train.latest_checkpoint(self.ckpt)
+            path_to_meta = glob(os.path.join(self.ckpt,'*.meta'))
+            self.saver = tf.train.import_meta_graph(path_to_meta[0])
+
+            gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
+            self.sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+            self.saver.restore(self.sess,checkpoint)
+            self.graph = self.sess.graph
+
+            self.conv_dict['w0'] = self.graph.get_tensor_by_name('discriminator/d_h0_conv/w:0')
+            self.conv_dict['w1'] = self.graph.get_tensor_by_name('discriminator/d_h1_conv/w:0')
+            self.conv_dict['w2'] = self.graph.get_tensor_by_name('discriminator/d_h2_conv/w:0')
+            self.conv_dict['b0'] = self.graph.get_tensor_by_name('discriminator/d_h0_conv/biases:0')
+            self.conv_dict['b1'] = self.graph.get_tensor_by_name('discriminator/d_h1_conv/biases:0')
+            self.conv_dict['b2'] = self.graph.get_tensor_by_name('discriminator/d_h2_conv/biases:0')
+
+            self.conv_dict['s1'] = self.graph.get_tensor_by_name('discriminator/d_h1_IN/scale:0')
+            self.conv_dict['s2'] = self.graph.get_tensor_by_name('discriminator/d_h2_IN/scale:0')
+            self.conv_dict['o1'] = self.graph.get_tensor_by_name('discriminator/d_h1_IN/offset:0')
+            self.conv_dict['o2'] = self.graph.get_tensor_by_name('discriminator/d_h2_IN/offset:0')
+
+            # print(tf.get_default_graph().get_all_collection_keys())
+            # self.df_dim = self.graph.get_tensor_by_name('discriminator/d_h0_conv/w:0').shape[-1]
 
 
-    def get_output(self, image, reuse=False, is_training=True, bn=False, bs=64):
+
+
+    def get_output(self, image, reuse=False, is_training=True, bn=False, bs=64, image_semSeg=None):
         params = {'activation': tf.nn.relu, 'padding': 'same',
-                  'batch_normalization': bn, 'entropy': 'sigmoid', 'batch_size': bs}
+                  'batch_normalization': bn, 'entropy': 'sigmoid', 'batch_size': bs,
+                  'sem_seg': image_semSeg}
         return self.archs[self.arch](self, image, reuse=reuse, is_training=is_training, params=params)
