@@ -66,7 +66,7 @@ ex.captured_out_filter = apply_backspaces_and_linefeeds
 ex.observers.append(get_observer())
 
 @ex.main
-def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN, datasetDisc, starting_weights, flag_measure, output_mat, flag_entropy, thresholds, _run):
+def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN, datasetDisc, starting_weights, flag_measure, output_mat, flag_entropy, thresholds, start, _run):
     for key in gan_config:
         setattr(a, key, gan_config[key])
     for key in disc_config:
@@ -214,23 +214,22 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
     h_orig = 1024
     w_orig = 2048
 
-    sub_size = 1
+    sub_size = 100
 
     semseg_path = "/cluster/work/riner/users/blumh/fishyscapes_deeplab_predictions_newfog"
     out_path = "/cluster/work/riner/users/blumh/resultsDH"
 
-
-    # for k in range(int(set_size/sub_size)):
-    for k in range(0):
-        # counter = 0
+    for k in range(start,(start+2)):
         kb = k*sub_size
         if k>0:
             print('Done %d images' %(kb))
             stdout.flush()
         img_array = np.zeros((sub_size,256,256,3))
+        segm_array = np.zeros((sub_size,256,256,3))
         for i in range(sub_size):
             img = cv2.imread(path.join(base_path,'testset', str(i+kb)+'_rgb.png'))
             dl_labels =  np.expand_dims(cv2.imread(path.join(semseg_path,str(i+kb)+'_predict.png'))[:,:,0],axis=0)
+
             cs_labels = np.asarray(label_lookup, dtype='int32')[dl_labels]
 
             lookup = np.array([labelinfo[i]['color'] for i in range(max(labelinfo.keys()) + 1)]).astype(int)
@@ -243,27 +242,26 @@ def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN,
             # blob['labels'] = np.asarray(self.label_lookup, dtype='int32')[blob['labels']]
 
             img_array[i,...] = cv2.resize(img, (256, 256),interpolation=cv2.INTER_LINEAR)
-            segm = np.expand_dims(cv2.resize(segm[0,...], (256, 256),interpolation=cv2.INTER_NEAREST),axis=0)
+            segm_array[i,...] = cv2.resize(segm[0,...], (256, 256),interpolation=cv2.INTER_NEAREST)
 
-            filename = path.join(out_path,str(i+kb)+'_segm.png')
-            cv2.imwrite(filename,segm)
+        with GAN_sess.as_default():
+            with GAN_graph.as_default():
+                synth_images = modelGAN.transform(a,segm_array)
 
+        with sessD.as_default():
+            with Disc_graph.as_default():
+                simMat = modelDiff.transform(img_array, synth_images, segm_array)
 
-        # data = {'rgb': tf.to_float(img_array), 'depth': tf.zeros(shape=[img_array.shape[0],img_array.shape[1],img_array.shape[2],1],dtype=tf.float32),
-        #                     'labels': tf.zeros(shape=img_array.shape[0:-1],dtype=tf.int32),
-        #                     'mask': tf.zeros(shape=img_array.shape[0:-1],dtype=tf.float32)}
-        # output = net.predict(data)
+        for i in range(sub_size):
+            # filename = path.join(out_path,str(i+kb)+'_rgb.png')
+            # cv2.imwrite(filename,cv2.resize(img_array[i,...], (2048, 1024),interpolation=cv2.INTER_LINEAR))
+            # filename = path.join(out_path,str(i+kb)+'_segm.png')
+            # cv2.imwrite(filename,cv2.resize(segm_array[i,...], (2048, 1024),interpolation=cv2.INTER_NEAREST))
+            filename = path.join(out_path,str(i+kb)+'_dissim.png')
+            cv2.imwrite(filename,simMat[i,...])
+            filename = path.join(out_path,str(i+kb)+'_dissim.npy')
+            np.save(filename,cv2.resize(simMat[i,...], (2048, 1024),interpolation=cv2.INTER_LINEAR))
 
-        # outputColor = data_SemSeg.coloured_labels(labels=output)
-        # segm = outputColor[...,::-1]
-
-        # with GAN_sess.as_default():
-        #     with GAN_graph.as_default():
-        #         synth_images = modelGAN.transform(a,segm)
-        #
-        # with sessD.as_default():
-        #     with Disc_graph.as_default():
-        #         simMat = modelDiff.transform(img_array, synth_images, segm)
         #
         # filename = os.path.join(output_dir,"rgb"+str(k)+".png")
         # cv2.imwrite(filename, img_array[0,...,::-1])
