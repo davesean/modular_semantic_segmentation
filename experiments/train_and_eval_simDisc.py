@@ -109,7 +109,7 @@ def predict_output(net, output_dir, paths, data_desc, flag_entropy, num_classes,
     return predict_network(net, output_dir, paths, data_desc, flag_entropy, num_classes)
 
 @ex.main
-def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN, datasetDisc, starting_weights, flag_measure, output_mat, flag_entropy, thresholds, _run):
+def main(modelname, net_config, gan_config, disc_config, datasetSem, datasetGAN, datasetDisc, starting_weights, flag_measure, output_mat, flag_entropy, thresholds, start, _run):
     for key in gan_config:
         setattr(a, key, gan_config[key])
     for key in disc_config:
