@@ -21,7 +21,7 @@ CITIES = ['aachen', 'bremen', 'darmstadt', 'erfurt', 'hanover', 'krefeld', 'stra
 class Cityscapes_GAN(DataBaseclass):
 
     _data_shape_description = {
-            'rgb': (None, None, 3), 'labels': (None, None,3)}
+            'rgb': (None, None, 3), 'labels': (None, None,3), 'rgbPlus': (None,None,3)}
     _num_default_classes = 12
 
     def __init__(self, base_path=CITYSCAPES_BASEPATH, batchsize=1, in_memory=False,
@@ -169,6 +169,7 @@ class Cityscapes_GAN(DataBaseclass):
 
         blob = {}
         blob['rgb'] = cv2.imread(rgb_filename)
+        blob['rgbPlus'] = cv2.imread(rgb_filename)
         #blob['depth'] = cv2.imread(depth_filename, cv2.IMREAD_ANYDEPTH)
         # blob['labels'] = cv2.imread(labels_filename)
         blob['labels'] = cv2.imread(labels_filename, cv2.IMREAD_ANYDEPTH)

@@ -112,13 +112,14 @@ class pix2pix(object):
             self.iter_handle, *data_description)
         training_batch = iterator.get_next()
 
-        self.build_model(training_batch['labels'], training_batch['rgb'])
+        self.build_model(training_batch['labels'], training_batch['rgb'],training_batch['rgbPlus'])
         self.checkpoint = checkpoint
         if checkpoint is not None:
             self.load(checkpoint)
             self.checkpoint_loaded = True
 
-    def build_model(self, input, target):
+    def build_model(self, input, target, big):
+        self.big = preprocess(big)
         self.real_B = preprocess(target,self.use_grayscale)
         self.real_A = preprocess(input)
 
@@ -313,7 +314,7 @@ class pix2pix(object):
 
     def transform(self, args, images):
         """Transforms dataset from single images
-        This is used for pipeline usage.
+        This is used for pipeline.
         """
         # Check that a checkpoint was loaded at init
         assert(self.checkpoint is not None)
@@ -338,6 +339,36 @@ class pix2pix(object):
             synth[i,:,:,:] = deprocess(outImage[0])
 
         return synth
+
+    def transform_withD(self, args, segms, rgbs):
+        """Transforms dataset from single images
+        This is used for pipeline. Here the Disc 30x30 output is also output
+        and returned.
+        """
+        # Check that a checkpoint was loaded at init
+        assert(self.checkpoint is not None)
+        if self.checkpoint_loaded is False and self.load(self.checkpoint):
+            self.checkpoint_loaded = True
+            print(" [*] Load SUCCESS")
+        else:
+            print(" [!] Load failed...")
+
+        synth = np.zeros((segms.shape))
+        predD = np.zeros((segms.shape[0],30,30))
+
+        data = {'rgb': tf.to_float(rgbs), 'labels': tf.to_float(segms)}
+
+        iterator = tf.data.Dataset.from_tensor_slices(data)\
+                   .batch(1).make_one_shot_iterator()
+        handle = self.sess.run(iterator.string_handle())
+
+        for i in range(segms.shape[0]):
+            outImage, outDisc = self.sess.run([self.fake_B, self.D_],
+                                           feed_dict={ self.iter_handle: handle })
+
+            synth[i,...] = deprocess(outImage[0])
+            predD[i,...] = outDisc[0,:,:,0]
+        return synth, predD
 
     def transformDatasets(self, args):
         """Transforms complete dataset
@@ -376,7 +407,7 @@ class pix2pix(object):
             while True:
                 # Retrieve everything you want from of the graph
                 try:
-                    outImage, inpt, target = self.sess.run([self.fake_B,self.real_A,self.real_B],
+                    outImage, inpt, target, big = self.sess.run([self.fake_B,self.real_A,self.real_B, self.big],
                                                    feed_dict={ self.iter_handle: set_handles[sets] })
                 # When tf dataset is empty this error is thrown
                 except tf.errors.OutOfRangeError:
@@ -390,6 +421,8 @@ class pix2pix(object):
                 cv2.imwrite(os.path.join(local_folder,filename), deprocess(inpt[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
                 filename = "target_"+ sets + str(counter) + ".png"
                 cv2.imwrite(os.path.join(local_folder,filename), deprocess(target[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                filename = "big_"+ sets + str(counter) + ".png"
+                cv2.imwrite(os.path.join(local_folder,filename), deprocess(big[0,:,:,:]), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
                 counter +=1
 
     def discriminator(self, image, y=None, reuse=False):
